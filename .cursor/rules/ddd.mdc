@@ -1,0 +1,25 @@
+---
+description: Слои DDD внутри сервиса
+globs: "internal/**/*.go"
+alwaysApply: false
+---
+
+# Слои бизнес-логики
+
+У каждого сервиса три слоя. Зависимости идут только внутрь: `adapters` → `app` → `domain`.
+
+- `domain` — сущности, инварианты, доменные ошибки, порты репозиториев. Только стандартная библиотека и пакеты своего `domain`. Идентификаторы — пакет `uuid`. Цена в домене — `int64` в минимальных единицах валюты.
+- `app` — сценарии использования. Видит свой `domain`. Не видит `adapters`, драйверы, gRPC и HTTP.
+- `adapters` — HTTP, gRPC, Postgres, Redis, NATS, ClickHouse. Здесь реализация портов и перевод доменных ошибок в ответ протокола.
+
+```go
+// domain: ошибка бизнеса, без кодов транспорта
+var ErrSubscriptionInactive = errors.New("subscription inactive")
+
+// adapters: перевод на границе
+if errors.Is(err, domain.ErrSubscriptionInactive) {
+    return nil, status.Error(codes.FailedPrecondition, "subscription inactive")
+}
+```
+
+Общий технический примитив берётся из `pkg`. Общий доменный тип для двух сервисов не заводим: между сервисами только контракт из `api/`.

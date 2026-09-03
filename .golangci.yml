@@ -1,0 +1,242 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - contextcheck
+    - depguard
+    - forbidigo
+    - gocritic
+    - mnd
+    - protogetter
+    - revive
+    - sloglint
+    - testifylint
+    - unparam
+    - usestdlibvars
+    - wrapcheck
+  settings:
+    depguard:
+      rules:
+        banned-libraries:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: github.com/gin-gonic/gin
+              desc: HTTP-маршрутизация — github.com/go-chi/chi/v5
+            - pkg: github.com/labstack/echo
+              desc: HTTP-маршрутизация — github.com/go-chi/chi/v5
+            - pkg: gorm.io/gorm
+              desc: доступ к Postgres — pgx и sqlc
+            - pkg: entgo.io/ent
+              desc: доступ к Postgres — pgx и sqlc
+            - pkg: go.uber.org/zap
+              desc: логи — log/slog
+            - pkg: github.com/sirupsen/logrus
+              desc: логи — log/slog
+            - pkg: github.com/spf13/viper
+              desc: конфигурация — github.com/caarlos0/env/v11
+            - pkg: go.uber.org/fx
+              desc: зависимости собираются в cmd без DI-контейнера
+            - pkg: github.com/google/wire
+              desc: зависимости собираются в cmd без DI-контейнера
+            - pkg: github.com/lib/pq
+              desc: драйвер Postgres — github.com/jackc/pgx/v5
+            - pkg: github.com/golang/protobuf
+              desc: API protobuf — google.golang.org/protobuf
+            - pkg: github.com/pkg/errors
+              desc: ошибки стандартной библиотеки, оборачивание через %w
+            - pkg: github.com/dgrijalva/jwt-go
+              desc: JWT — github.com/golang-jwt/jwt/v5
+            - pkg: math/rand$
+              desc: генератор — math/rand/v2
+            - pkg: github.com/google/uuid
+              desc: идентификаторы — пакет uuid стандартной библиотеки
+        auth-domain:
+          list-mode: strict
+          files:
+            - "**/internal/auth/domain/**/*.go"
+          allow:
+            - $gostd
+            - github.com/trb1maker/subscriptions/internal/auth/domain
+        subscriptions-domain:
+          list-mode: strict
+          files:
+            - "**/internal/subscriptions/domain/**/*.go"
+          allow:
+            - $gostd
+            - github.com/trb1maker/subscriptions/internal/subscriptions/domain
+        usage-domain:
+          list-mode: strict
+          files:
+            - "**/internal/usage/domain/**/*.go"
+          allow:
+            - $gostd
+            - github.com/trb1maker/subscriptions/internal/usage/domain
+        gateway-domain:
+          list-mode: strict
+          files:
+            - "**/internal/gateway/domain/**/*.go"
+          allow:
+            - $gostd
+            - github.com/trb1maker/subscriptions/internal/gateway/domain
+        auth:
+          list-mode: lax
+          files:
+            - "**/internal/auth/**/*.go"
+            - "**/cmd/auth/**/*.go"
+          allow:
+            - github.com/trb1maker/subscriptions/internal/auth
+            - github.com/trb1maker/subscriptions/pkg
+            - github.com/trb1maker/subscriptions/api
+          deny:
+            - pkg: github.com/trb1maker/subscriptions
+              desc: внутри модуля доступны только свой сервис, pkg и api
+        subscriptions:
+          list-mode: lax
+          files:
+            - "**/internal/subscriptions/**/*.go"
+            - "**/cmd/subscriptions/**/*.go"
+          allow:
+            - github.com/trb1maker/subscriptions/internal/subscriptions
+            - github.com/trb1maker/subscriptions/pkg
+            - github.com/trb1maker/subscriptions/api
+          deny:
+            - pkg: github.com/trb1maker/subscriptions
+              desc: внутри модуля доступны только свой сервис, pkg и api
+        usage:
+          list-mode: lax
+          files:
+            - "**/internal/usage/**/*.go"
+            - "**/cmd/usage/**/*.go"
+          allow:
+            - github.com/trb1maker/subscriptions/internal/usage
+            - github.com/trb1maker/subscriptions/pkg
+            - github.com/trb1maker/subscriptions/api
+          deny:
+            - pkg: github.com/trb1maker/subscriptions
+              desc: внутри модуля доступны только свой сервис, pkg и api
+        gateway:
+          list-mode: lax
+          files:
+            - "**/internal/gateway/**/*.go"
+            - "**/cmd/gateway/**/*.go"
+          allow:
+            - github.com/trb1maker/subscriptions/internal/gateway
+            - github.com/trb1maker/subscriptions/pkg
+            - github.com/trb1maker/subscriptions/api
+          deny:
+            - pkg: github.com/trb1maker/subscriptions
+              desc: внутри модуля доступны только свой сервис, pkg и api
+        pkg:
+          list-mode: lax
+          files:
+            - "**/pkg/**/*.go"
+          allow:
+            - github.com/trb1maker/subscriptions/pkg
+          deny:
+            - pkg: github.com/trb1maker/subscriptions
+              desc: pkg не зависит от сервисов
+        app:
+          list-mode: lax
+          files:
+            - "**/internal/*/app/**/*.go"
+          deny:
+            - pkg: github.com/trb1maker/subscriptions/internal/auth/adapters
+              desc: сценарий не зависит от адаптеров
+            - pkg: github.com/trb1maker/subscriptions/internal/subscriptions/adapters
+              desc: сценарий не зависит от адаптеров
+            - pkg: github.com/trb1maker/subscriptions/internal/usage/adapters
+              desc: сценарий не зависит от адаптеров
+            - pkg: github.com/trb1maker/subscriptions/internal/gateway/adapters
+              desc: сценарий не зависит от адаптеров
+        app-no-drivers:
+          list-mode: lax
+          files:
+            - "**/internal/*/app/**/*.go"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: драйвер доступен только адаптеру
+            - pkg: github.com/redis/go-redis
+              desc: драйвер доступен только адаптеру
+            - pkg: github.com/nats-io/nats.go
+              desc: клиент брокера доступен только адаптеру
+            - pkg: github.com/ClickHouse/clickhouse-go
+              desc: драйвер доступен только адаптеру
+            - pkg: google.golang.org/grpc
+              desc: транспорт доступен только адаптеру
+            - pkg: github.com/go-chi/chi
+              desc: HTTP доступен только адаптеру
+            - pkg: net/http$
+              desc: HTTP доступен только адаптеру
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: логи пишем через переданный *slog.Logger
+        - pattern: ^print(ln)?$
+          msg: логи пишем через переданный *slog.Logger
+        - pattern: ^slog\.(Debug|Info|Warn|Error|Log)(Context)?$
+          msg: пакетный slog не используем, логгер передаётся в зависимости
+    revive:
+      confidence: 0.8
+      rules:
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: increment-decrement
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+    sloglint:
+      no-global: all
+      context: all
+      static-msg: true
+      key-naming-case: snake
+      msg-style: lowercased
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/trb1maker/subscriptions/internal/*/domain
+        - github.com/trb1maker/subscriptions/internal/*/domain/**
+  exclusions:
+    generated: lax
+    paths:
+      - api/gen
+    rules:
+      - path: _test\.go
+        linters:
+          - wrapcheck
+          - forbidigo
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/trb1maker/subscriptions)
+    gofumpt:
+      module-path: github.com/trb1maker/subscriptions
+      extra:
+        balance-calls: true
+  exclusions:
+    generated: lax
+    paths:
+      - api/gen
+
+issues:
+  max-same-issues: 0
+
+run:
+  allow-parallel-runners: true
+  go: "1.27"
+  concurrency: 4

@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+vars:
+  GOLANGCILINT: "go tool -modfile=tools/golangci-lint.mod golangci-lint"
+  GOOSE: "go tool -modfile tools/goose.mod goose"
+  DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
+
+tasks:
+  fmt:check:
+    desc: Проверка форматирования кода
+    cmd: "{{.GOLANGCILINT}} fmt --diff ./..."
+    silent: true
+
+  fmt:fix:
+    desc: Форматирование кода
+    cmd: "{{.GOLANGCILINT}} fmt ./..."
+    silent: true
+
+  lint:check:
+    desc: Линтинг кода
+    cmd: "{{.GOLANGCILINT}} run ./..."
+    silent: true
+
+  lint:fix:
+    desc: Линтинг кода
+    cmd: "{{.GOLANGCILINT}} run --fix ./..."
+    silent: true
+
+  dev:start:
+    desc: Развернуть инфраструктуру для разработки
+    dotenv: [.env]
+    cmd: docker compose {{.DEV_COMPOSE}} up -d
+    silent: true
+
+  dev:stop:
+    desc: Развернуть инфраструктуру для разработки
+    dotenv: [.env]
+    cmd: docker compose {{.DEV_COMPOSE}} down -v
+    silent: true

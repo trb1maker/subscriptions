@@ -1,0 +1,37 @@
+---
+description: Разрешённые библиотеки Go
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Библиотеки
+
+Берём библиотеку из `docs/CONVENTIONS.md`, а не пишем свой аналог и не подключаем соседнюю по назначению.
+
+- HTTP: `github.com/go-chi/chi/v5`
+- gRPC: `google.golang.org/grpc`
+- JWT: `github.com/golang-jwt/jwt/v5`
+- PostgreSQL: `github.com/jackc/pgx/v5`, запросы через sqlc
+- Миграции: `github.com/pressly/goose/v3`
+- Redis: `github.com/redis/go-redis/v9`
+- ClickHouse: `github.com/ClickHouse/clickhouse-go/v2`
+- NATS: `github.com/nats-io/nats.go` (JetStream)
+- Конфигурация: `github.com/caarlos0/env/v11`
+- Логи: `log/slog`. Логгер передаётся аргументом, запись только через `*Context`, чтобы в строку попали trace и идентификатор запроса из `context`
+- Идентификаторы: пакет `uuid` стандартной библиотеки
+- Метрики: `github.com/prometheus/client_golang`
+- Трассировка: `go.opentelemetry.io/otel`
+- Деньги: в домене `int64` минимальных единиц; `github.com/shopspring/decimal` только в адаптерах
+- Ошибки: `errors` и `fmt.Errorf` с `%w`
+- Случайность: `math/rand/v2`
+
+Не подключать Gin, Echo, GORM, Zap, Logrus, Viper, Wire, Fx, `lib/pq`, `github.com/pkg/errors`, `github.com/golang/protobuf`, `github.com/google/uuid`.
+
+```go
+// Хорошо: контекст несёт trace_id и идентификатор запроса
+logger.InfoContext(ctx, "limit checked", "user_id", userID)
+
+// Плохо: без контекста атрибуты запроса в запись не попадут
+logger.Info("limit checked", "user_id", userID)
+slog.InfoContext(ctx, "limit checked")
+```
