@@ -211,7 +211,7 @@ func startRedis(t *testing.T, ctx context.Context) string {
 func startClickHouse(t *testing.T, ctx context.Context) string {
 	t.Helper()
 
-	container, err := clickhousecontainer.Run(ctx, "clickhouse/clickhouse-server:24.8-alpine",
+	container, err := clickhousecontainer.Run(ctx, "clickhouse:26.7",
 		clickhousecontainer.WithUsername("default"),
 		clickhousecontainer.WithPassword("secret"),
 		clickhousecontainer.WithDatabase("default"),
