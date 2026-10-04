@@ -22,6 +22,7 @@ import (
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/mtls"
 	natspkg "github.com/trb1maker/subscriptions/pkg/nats"
+	"github.com/trb1maker/subscriptions/pkg/observe"
 	authadapter "github.com/trb1maker/subscriptions/services/gateway/internal/adapters/auth"
 	httpapi "github.com/trb1maker/subscriptions/services/gateway/internal/adapters/http"
 	natsadapter "github.com/trb1maker/subscriptions/services/gateway/internal/adapters/nats"
@@ -33,11 +34,13 @@ import (
 const (
 	readHeaderTimeout = 5 * time.Second
 	shutdownTimeout   = 10 * time.Second
+	serviceName       = "gateway"
 )
 
 type config struct {
 	HTTPAddr                    string        `env:"HTTP_ADDR"             envDefault:":8080"`
 	LogLevel                    string        `env:"LOG_LEVEL"             envDefault:"info"`
+	OTELEndpoint                string        `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:54317"`
 	AuthGRPCAddr                string        `env:"AUTH_GRPC_ADDR,required"`
 	AuthGRPCServerName          string        `env:"AUTH_GRPC_SERVER_NAME"           envDefault:"localhost"`
 	SubscriptionsGRPCAddr       string        `env:"SUBSCRIPTIONS_GRPC_ADDR,required"`
@@ -71,7 +74,22 @@ func run() int {
 		return 1
 	}
 
-	log, err := logger.New(os.Stdout, cfg.LogLevel)
+	if cfg.WebhookKey == "" {
+		log, logErr := logger.New(os.Stderr, "info")
+		if logErr != nil {
+			return 1
+		}
+
+		log.ErrorContext(context.Background(), "config load failed", "error", errors.New("empty webhook key"))
+
+		return 1
+	}
+
+	obs, err := observe.Start(context.Background(), observe.Config{
+		Service:  serviceName,
+		Level:    cfg.LogLevel,
+		Endpoint: cfg.OTELEndpoint,
+	})
 	if err != nil {
 		fallback, fallbackErr := logger.New(os.Stderr, "info")
 		if fallbackErr != nil {
@@ -83,11 +101,8 @@ func run() int {
 		return 1
 	}
 
-	if cfg.WebhookKey == "" {
-		log.ErrorContext(context.Background(), "config load failed", "error", errors.New("empty webhook key"))
-
-		return 1
-	}
+	defer obs.Shutdown(context.Background())
+	log := obs.Log
 
 	tlsFiles := mtls.Files{
 		CertFile: cfg.TLSCertFile,
@@ -117,8 +132,9 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	obs.Watch(ctx)
 
-	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, authTLS)
+	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, authTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "auth client init failed", "error", err)
 
@@ -126,7 +142,7 @@ func run() int {
 	}
 	defer closeClient(ctx, log, authConn)
 
-	subscriptionsConn, err := grpcclient.Dial(ctx, cfg.SubscriptionsGRPCAddr, subscriptionsTLS)
+	subscriptionsConn, err := grpcclient.Dial(ctx, cfg.SubscriptionsGRPCAddr, subscriptionsTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "subscriptions client init failed", "error", err)
 
@@ -134,7 +150,7 @@ func run() int {
 	}
 	defer closeClient(ctx, log, subscriptionsConn)
 
-	usageConn, err := grpcclient.Dial(ctx, cfg.UsageGRPCAddr, usageTLS)
+	usageConn, err := grpcclient.Dial(ctx, cfg.UsageGRPCAddr, usageTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "usage client init failed", "error", err)
 
@@ -179,6 +195,7 @@ func run() int {
 			subscriptions,
 			generate,
 			cfg.WebhookKey,
+			obs.Metrics,
 		),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}

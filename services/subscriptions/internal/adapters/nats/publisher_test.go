@@ -8,6 +8,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -57,10 +58,10 @@ type fakeStream struct {
 	calls   int
 }
 
-func (f *fakeStream) Publish(_ context.Context, subject string, payload []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+func (f *fakeStream) PublishMsg(_ context.Context, msg *nats.Msg, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
 	f.calls++
-	f.subject = subject
-	f.payload = append([]byte(nil), payload...)
+	f.subject = msg.Subject
+	f.payload = append([]byte(nil), msg.Data...)
 	if f.err != nil {
 		return nil, f.err
 	}

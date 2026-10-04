@@ -7,13 +7,23 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/trb1maker/subscriptions/pkg/health"
+	"github.com/trb1maker/subscriptions/pkg/metrics"
 	"github.com/trb1maker/subscriptions/pkg/middleware"
 )
 
-// NewRouter собирает HTTP-маршруты Subscriptions. Снаружи доступна только проверка здоровья.
-func NewRouter(log *slog.Logger, checks ...health.Check) http.Handler {
+// NewRouter собирает HTTP-маршруты Subscriptions. Снаружи доступны проверка здоровья и метрики.
+func NewRouter(log *slog.Logger, met *metrics.Metrics, checks ...health.Check) http.Handler {
 	router := chi.NewRouter()
-	middleware.Use(router, log)
+	opts := []middleware.Option{middleware.WithTracing()}
+	if met != nil {
+		opts = append(opts, middleware.WithMetrics(met))
+	}
+
+	middleware.Use(router, log, opts...)
+	if met != nil {
+		router.Method(http.MethodGet, "/metrics", met.Handler())
+	}
+
 	router.Method(http.MethodGet, "/health", health.Handler(log, checks...))
 
 	return router

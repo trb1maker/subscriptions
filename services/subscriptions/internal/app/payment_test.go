@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/trb1maker/subscriptions/services/subscriptions/internal/app"
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/domain"
 )
 
@@ -106,4 +107,52 @@ func TestProcessPaymentRetriesPublishAfterCommit(t *testing.T) {
 	require.Equal(t, sub.PeriodEnd.AddDate(0, 1, 0), paid.PeriodEnd)
 	require.Len(t, fx.payments.events, 1)
 	require.Equal(t, paymentID, fx.payments.events[0].ID.String())
+}
+
+func TestProcessPaymentCountsOnce(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	store := newMemStore()
+	fx := newFixtures(t, store, &fakeDirectory{}, now)
+	rec := &paymentRecorder{}
+	fx.svc.SetMetrics(rec)
+	admin := domain.Owner{ID: uuid.New(), Kind: domain.OwnerOrganization, Roles: []string{domain.RoleAdmin}}
+	user := domain.Owner{ID: uuid.New(), Kind: domain.OwnerUser}
+	tariff, err := fx.svc.CreateTariff(context.Background(), admin, "personal", 100, 20, "b2c", false, "tariff-1")
+	require.NoError(t, err)
+	sub, err := fx.svc.CreateSubscription(context.Background(), user, tariff.ID, "sub-1")
+	require.NoError(t, err)
+
+	_, err = fx.svc.ProcessPayment(context.Background(), sub.ID, "not-a-uuid", 100, now)
+	require.Error(t, err)
+	require.Empty(t, rec.got)
+
+	paymentID := uuid.New().String()
+	fx.payments.err = domain.ErrUnavailable
+	_, err = fx.svc.ProcessPayment(context.Background(), sub.ID, paymentID, 100, now)
+	require.ErrorIs(t, err, domain.ErrUnavailable)
+	require.Equal(t, []string{app.PaymentStatusReceived}, rec.got)
+
+	fx.payments.err = nil
+	_, err = fx.svc.ProcessPayment(context.Background(), sub.ID, paymentID, 100, now)
+	require.NoError(t, err)
+	require.Equal(t, []string{app.PaymentStatusReceived}, rec.got)
+
+	_, err = fx.svc.ProcessPayment(context.Background(), sub.ID, uuid.New().String(), 50, now)
+	require.ErrorIs(t, err, domain.ErrInvalidArgument)
+	require.Equal(t, []string{app.PaymentStatusReceived, app.PaymentStatusFailed}, rec.got)
+
+	store.expire(sub.ID)
+	_, err = fx.svc.ProcessPayment(context.Background(), sub.ID, uuid.New().String(), 100, now)
+	require.ErrorIs(t, err, domain.ErrSubscriptionInactive)
+	require.Equal(t, []string{app.PaymentStatusReceived, app.PaymentStatusFailed, app.PaymentStatusFailed}, rec.got)
+}
+
+type paymentRecorder struct {
+	got []string
+}
+
+func (r *paymentRecorder) Payment(status string) {
+	r.got = append(r.got, status)
 }

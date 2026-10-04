@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 
 	eventsv1 "github.com/trb1maker/subscriptions/api/gen/events/v1"
+	"github.com/trb1maker/subscriptions/pkg/trace"
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/app"
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/domain"
 )
@@ -17,7 +19,7 @@ import (
 const subjectPrefix = "usage.owner."
 
 type jetStream interface {
-	Publish(ctx context.Context, subject string, payload []byte, opts ...jetstream.PublishOpt) (*jetstream.PubAck, error)
+	PublishMsg(ctx context.Context, msg *nats.Msg, opts ...jetstream.PublishOpt) (*jetstream.PubAck, error)
 }
 
 // Publisher отправляет PaymentReceived в поток USAGE.
@@ -46,7 +48,8 @@ func (p *Publisher) PublishPaymentReceived(ctx context.Context, event app.Paymen
 	}
 
 	subject := Subject(string(event.Owner.Kind), event.Owner.ID.String())
-	ack, err := p.js.Publish(ctx, subject, body, jetstream.WithMsgID(event.ID.String()))
+	msg := &nats.Msg{Subject: subject, Data: body, Header: trace.Headers(ctx)}
+	ack, err := p.js.PublishMsg(ctx, msg, jetstream.WithMsgID(event.ID.String()))
 	if err != nil {
 		p.log.ErrorContext(ctx, "publish event failed", "error", err, "event_id", event.ID.String())
 

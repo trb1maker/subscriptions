@@ -175,6 +175,70 @@ func TestRestoreRebuildsProjection(t *testing.T) {
 	require.Equal(t, int64(3), remaining)
 }
 
+func TestApplyRecordsMetricsOnce(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingMetrics{}
+	svc := newService(t, newLedger(), newBalances(), directory{})
+	svc.SetMetrics(rec)
+	owner := domain.Owner{ID: uuid.New(), Kind: domain.OwnerUser}
+	when := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	payment := domain.Event{
+		ID: uuid.New(), Type: domain.EventPaymentReceived, OccurredAt: when, Owner: owner,
+		HasAllowance: true, Allowance: 1, PaymentID: "pay-1",
+	}
+	failed := domain.Event{
+		ID: uuid.New(), Type: domain.EventMessageFailed, OccurredAt: when.Add(time.Second), Owner: owner, Tokens: 4,
+	}
+	first := domain.Event{
+		ID: uuid.New(), Type: domain.EventMessageProcessed, OccurredAt: when.Add(2 * time.Second), Owner: owner, Tokens: 2,
+	}
+	second := domain.Event{
+		ID: uuid.New(), Type: domain.EventMessageProcessed, OccurredAt: when.Add(3 * time.Second), Owner: owner, Tokens: 3,
+	}
+
+	require.NoError(t, svc.Apply(context.Background(), payment))
+	require.NoError(t, svc.Apply(context.Background(), failed))
+	require.NoError(t, svc.Apply(context.Background(), failed))
+	require.NoError(t, svc.Apply(context.Background(), first))
+	require.NoError(t, svc.Apply(context.Background(), second))
+	require.NoError(t, svc.Apply(context.Background(), second))
+
+	require.Equal(t, 2, rec.consumed["user"])
+	require.Equal(t, int64(9), rec.tokens["user"])
+	require.Equal(t, 1, rec.overdraft["user"])
+}
+
+type recordingMetrics struct {
+	consumed  map[string]int
+	tokens    map[string]int64
+	overdraft map[string]int
+}
+
+func (r *recordingMetrics) MessageConsumed(kind string) {
+	if r.consumed == nil {
+		r.consumed = map[string]int{}
+	}
+
+	r.consumed[kind]++
+}
+
+func (r *recordingMetrics) TokensUsed(kind string, tokens int64) {
+	if r.tokens == nil {
+		r.tokens = map[string]int64{}
+	}
+
+	r.tokens[kind] += tokens
+}
+
+func (r *recordingMetrics) Overdraft(kind string) {
+	if r.overdraft == nil {
+		r.overdraft = map[string]int{}
+	}
+
+	r.overdraft[kind]++
+}
+
 func newService(t *testing.T, ledger app.Ledger, balances app.Balances, directory app.Directory) *app.Service {
 	t.Helper()
 

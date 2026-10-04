@@ -9,6 +9,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/trb1maker/subscriptions/pkg/trace"
 	"github.com/trb1maker/subscriptions/services/usage/internal/domain"
 )
 
@@ -76,11 +77,19 @@ func handle(ctx context.Context, msg jetstream.Msg, applier Applier, log *slog.L
 	defer cancel()
 
 	messageID := msg.Headers().Get(jetstream.MsgIDHeader)
+	msgCtx = trace.Context(msgCtx, msg.Headers())
+	msgCtx, endSpan := trace.Start(msgCtx, "usage consume")
+	defer endSpan()
+
 	event, err := Decode(msg.Data(), messageID)
 	eventID := messageID
 	if err == nil {
 		eventID = event.ID.String()
 		err = applier.Apply(msgCtx, event)
+	}
+
+	if err != nil {
+		trace.Fail(msgCtx, err)
 	}
 
 	settle(msgCtx, log, msg, eventID, err)

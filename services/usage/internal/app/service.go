@@ -36,11 +36,27 @@ type CheckResult struct {
 	Owner     domain.Owner
 }
 
+// Metrics считает списания, токены и овердрафт. Повтор события сюда не попадает.
+type Metrics interface {
+	MessageConsumed(kind string)
+	TokensUsed(kind string, tokens int64)
+	Overdraft(kind string)
+}
+
+type nopMetrics struct{}
+
+func (nopMetrics) MessageConsumed(string) {}
+
+func (nopMetrics) TokensUsed(string, int64) {}
+
+func (nopMetrics) Overdraft(string) {}
+
 // Service применяет события и отвечает, можно ли начать генерацию.
 type Service struct {
 	ledger    Ledger
 	balances  Balances
 	directory Directory
+	metrics   Metrics
 }
 
 // New собирает сценарии.
@@ -49,7 +65,14 @@ func New(ledger Ledger, balances Balances, directory Directory) (*Service, error
 		return nil, errors.New("missing dependency")
 	}
 
-	return &Service{ledger: ledger, balances: balances, directory: directory}, nil
+	return &Service{ledger: ledger, balances: balances, directory: directory, metrics: nopMetrics{}}, nil
+}
+
+// SetMetrics подключает счётчики. nil оставляет пустую реализацию.
+func (s *Service) SetMetrics(m Metrics) {
+	if m != nil {
+		s.metrics = m
+	}
 }
 
 // Apply записывает событие и обновляет остаток. Повтор с тем же телом ничего не меняет.
@@ -77,7 +100,16 @@ func (s *Service) Apply(ctx context.Context, event domain.Event) error {
 		return fmt.Errorf("list owner events: %w", err)
 	}
 
-	return s.writeProjection(ctx, event.Owner, events)
+	balance, err := s.writeProjection(ctx, event.Owner, events)
+	if err != nil {
+		return err
+	}
+
+	if !found {
+		s.observe(event, balance)
+	}
+
+	return nil
 }
 
 // Restore пересобирает проекцию всех владельцев из журнала.
@@ -93,7 +125,7 @@ func (s *Service) Restore(ctx context.Context) error {
 	}
 
 	for owner, list := range grouped {
-		if err := s.writeProjection(ctx, owner, list); err != nil {
+		if _, err := s.writeProjection(ctx, owner, list); err != nil {
 			return err
 		}
 	}
@@ -101,17 +133,31 @@ func (s *Service) Restore(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) writeProjection(ctx context.Context, owner domain.Owner, events []domain.Event) error {
+func (s *Service) writeProjection(ctx context.Context, owner domain.Owner, events []domain.Event) (int64, error) {
 	balance, err := domain.Project(events)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := s.balances.Restore(ctx, owner, balance, eventIDs(events)); err != nil {
-		return fmt.Errorf("restore balance: %w", err)
+		return 0, fmt.Errorf("restore balance: %w", err)
 	}
 
-	return nil
+	return balance, nil
+}
+
+func (s *Service) observe(event domain.Event, balance int64) {
+	kind := string(event.Owner.Kind)
+	if event.Type == domain.EventMessageProcessed {
+		s.metrics.MessageConsumed(kind)
+		if balance < 0 {
+			s.metrics.Overdraft(kind)
+		}
+	}
+
+	if _, ok := event.Type.Outcome(); ok {
+		s.metrics.TokensUsed(kind, event.Tokens)
+	}
 }
 
 func eventIDs(events []domain.Event) []uuid.UUID {
