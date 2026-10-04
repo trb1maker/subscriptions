@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 			return
 		}
 
-		defer started.Close()
+		defer started.Close(ctx)
 		live = started
 		code = m.Run()
 		if code != 0 {
