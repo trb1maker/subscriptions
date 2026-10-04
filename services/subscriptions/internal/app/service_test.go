@@ -150,6 +150,29 @@ func TestCloseExpiredSkipsPaidB2CWithoutBase(t *testing.T) {
 	require.Zero(t, report.Closed)
 }
 
+func TestCloseExpiredPublishesBurnedOrganizationLimit(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	store := newMemStore()
+	periods := &fakePeriods{}
+	svc := newService(t, store, &fakeDirectory{}, now)
+	svc.SetPeriods(periods)
+	org := domain.Owner{ID: uuid.New(), Kind: domain.OwnerOrganization, Roles: []string{domain.RoleAdmin}}
+	tariff, err := svc.CreateTariff(context.Background(), org, "team", 1000, 40, "b2b", false, "tariff-1")
+	require.NoError(t, err)
+	sub, err := svc.CreateSubscription(context.Background(), org, tariff.ID, "sub-1")
+	require.NoError(t, err)
+	store.finishPeriod(sub.ID, now)
+
+	report, err := svc.CloseExpired(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Closed)
+	require.Len(t, periods.events, 1)
+	require.Equal(t, org.ID, periods.events[0].Owner.ID)
+	require.Equal(t, int64(0), periods.events[0].Allowance)
+}
+
 type fixtures struct {
 	svc      *app.Service
 	balances *fakeBalances
@@ -188,6 +211,16 @@ func (f *fakeBalances) Remaining(context.Context, domain.Owner) (int64, error) {
 type fakePayments struct {
 	events []app.PaymentNotice
 	err    error
+}
+
+type fakePeriods struct {
+	events []app.PeriodNotice
+}
+
+func (f *fakePeriods) PublishPeriodEnded(_ context.Context, event app.PeriodNotice) error {
+	f.events = append(f.events, event)
+
+	return nil
 }
 
 func (f *fakePayments) PublishPaymentReceived(_ context.Context, event app.PaymentNotice) error {
@@ -517,6 +550,7 @@ func (m *memStore) CloseExpired(_ context.Context, now time.Time) (domain.Expiry
 
 		m.subs[id] = next
 		report.Closed++
+		report.Applied = append(report.Applied, next)
 	}
 
 	return report, nil

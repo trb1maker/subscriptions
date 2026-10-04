@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 	"uuid"
 
 	"github.com/trb1maker/subscriptions/services/usage/internal/domain"
@@ -57,6 +59,9 @@ type Service struct {
 	balances  Balances
 	directory Directory
 	metrics   Metrics
+
+	mu    sync.Mutex
+	locks map[uuid.UUID]*sync.Mutex
 }
 
 // New собирает сценарии.
@@ -76,7 +81,11 @@ func (s *Service) SetMetrics(m Metrics) {
 }
 
 // Apply записывает событие и обновляет остаток. Повтор с тем же телом ничего не меняет.
+// События одного владельца применяются по очереди, чтобы проекция не затёрла чужое списание.
 func (s *Service) Apply(ctx context.Context, event domain.Event) error {
+	unlock := s.lockOwner(event.Owner.ID)
+	defer unlock()
+
 	event = event.Normalized()
 	if err := event.Validate(); err != nil {
 		return err
@@ -95,9 +104,9 @@ func (s *Service) Apply(ctx context.Context, event domain.Event) error {
 		return fmt.Errorf("append event: %w", err)
 	}
 
-	events, err := s.ledger.ListOwner(ctx, event.Owner)
+	events, err := s.ownerEvents(ctx, event)
 	if err != nil {
-		return fmt.Errorf("list owner events: %w", err)
+		return err
 	}
 
 	balance, err := s.writeProjection(ctx, event.Owner, events)
@@ -131,6 +140,57 @@ func (s *Service) Restore(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) lockOwner(id uuid.UUID) func() {
+	s.mu.Lock()
+	if s.locks == nil {
+		s.locks = map[uuid.UUID]*sync.Mutex{}
+	}
+
+	lock, ok := s.locks[id]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.locks[id] = lock
+	}
+	s.mu.Unlock()
+
+	lock.Lock()
+
+	return lock.Unlock
+}
+
+const projectWait = 2 * time.Second
+
+// ownerEvents ждёт, пока только что записанное событие станет видно в журнале.
+// ClickHouse может не отдать строку в том же запросе, что и вставка.
+func (s *Service) ownerEvents(ctx context.Context, event domain.Event) ([]domain.Event, error) {
+	deadline := time.Now().Add(projectWait)
+	for {
+		events, err := s.ledger.ListOwner(ctx, event.Owner)
+		if err != nil {
+			return nil, fmt.Errorf("list owner events: %w", err)
+		}
+
+		for _, item := range events {
+			if item.ID == event.ID {
+				return events, nil
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("event not visible: %w", domain.ErrUnavailable)
+		}
+
+		timer := time.NewTimer(20 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+
+			return nil, fmt.Errorf("list owner events: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
 }
 
 func (s *Service) writeProjection(ctx context.Context, owner domain.Owner, events []domain.Event) (int64, error) {
