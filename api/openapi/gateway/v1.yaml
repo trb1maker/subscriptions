@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Gateway API
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Проверка здоровья
+      responses:
+        "200":
+          description: Сервис принимает запросы
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthOk"
+        "503":
+          description: Зависимость не принимает запросы
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthUnavailable"
+components:
+  schemas:
+    HealthOk:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+    HealthUnavailable:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - checks
+      properties:
+        status:
+          type: string
+          enum:
+            - unavailable
+        checks:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
+            enum:
+              - unavailable

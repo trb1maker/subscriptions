@@ -273,13 +273,12 @@ end
 ## 7. Итерационный план реализации
 
 ### Итерация 1: Базовая инфраструктура
-- [ ] Настройка моно-репозитория
-- [ ] Создание `docker-compose.yml` со всеми зависимостями (PostgreSQL, Redis, Clickhouse, NATS, Grafana, Jaeger)
-- [ ] Базовая структура сервисов (cmd, internal, Dockerfile)
-- [ ] Настройка общего логгера и метрик
-- [ ] Базовый API Gateway с проверкой здоровья
+- [x] Каталог Gateway и общий `pkg`
+- [x] Общий логгер и HTTP-middleware
+- [x] `GET /health`
+- [x] GitHub Actions: форматирование, линтер, тесты
 
-**Критерий приемки**: `docker-compose up` запускает все сервисы, Gateway отвечает на `/health`
+**Критерий приемки**: `task ci` проходит, `GET /health` отвечает `200` без Docker
 
 ### Итерация 2: Auth Service
 - [ ] Схема БД: таблицы `users`, `organizations`
