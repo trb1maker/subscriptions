@@ -29,9 +29,11 @@ type Directory interface {
 }
 
 // CheckResult — ответ проверки лимита.
+// Owner — владелец остатка. Нулевой, если проекции нет.
 type CheckResult struct {
 	Allowed   bool
 	Remaining int64
+	Owner     domain.Owner
 }
 
 // Service применяет события и отвечает, можно ли начать генерацию.

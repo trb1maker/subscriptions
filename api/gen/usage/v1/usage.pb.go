@@ -58,9 +58,13 @@ func (*CheckLimitRequest) Descriptor() ([]byte, []int) {
 }
 
 type CheckLimitResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Allowed       bool                   `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
-	Remaining     int64                  `protobuf:"varint,2,opt,name=remaining,proto3" json:"remaining,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Allowed   bool                   `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	Remaining int64                  `protobuf:"varint,2,opt,name=remaining,proto3" json:"remaining,omitempty"`
+	// Владелец остатка, по которому принято решение. Пусто, если проекции нет.
+	// user или organization.
+	OwnerKind     string `protobuf:"bytes,3,opt,name=owner_kind,json=ownerKind,proto3" json:"owner_kind,omitempty"`
+	OwnerId       string `protobuf:"bytes,4,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -109,15 +113,32 @@ func (x *CheckLimitResponse) GetRemaining() int64 {
 	return 0
 }
 
+func (x *CheckLimitResponse) GetOwnerKind() string {
+	if x != nil {
+		return x.OwnerKind
+	}
+	return ""
+}
+
+func (x *CheckLimitResponse) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
 var File_usage_v1_usage_proto protoreflect.FileDescriptor
 
 const file_usage_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"\x14usage/v1/usage.proto\x12\busage.v1\"\x13\n" +
-	"\x11CheckLimitRequest\"L\n" +
+	"\x11CheckLimitRequest\"\x86\x01\n" +
 	"\x12CheckLimitResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x1c\n" +
-	"\tremaining\x18\x02 \x01(\x03R\tremaining2W\n" +
+	"\tremaining\x18\x02 \x01(\x03R\tremaining\x12\x1d\n" +
+	"\n" +
+	"owner_kind\x18\x03 \x01(\tR\townerKind\x12\x19\n" +
+	"\bowner_id\x18\x04 \x01(\tR\aownerId2W\n" +
 	"\fUsageService\x12G\n" +
 	"\n" +
 	"CheckLimit\x12\x1b.usage.v1.CheckLimitRequest\x1a\x1c.usage.v1.CheckLimitResponseB=Z;github.com/trb1maker/subscriptions/api/gen/usage/v1;usagev1b\x06proto3"

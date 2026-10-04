@@ -29,7 +29,7 @@ func (s *Service) CheckLimit(ctx context.Context, owner domain.Owner) (CheckResu
 		return CheckResult{}, nil
 	}
 
-	return CheckResult{Allowed: remaining > 0, Remaining: remaining}, nil
+	return CheckResult{Allowed: remaining > 0, Remaining: remaining, Owner: billing}, nil
 }
 
 func (s *Service) billingOwner(ctx context.Context, owner domain.Owner) (domain.Owner, error) {

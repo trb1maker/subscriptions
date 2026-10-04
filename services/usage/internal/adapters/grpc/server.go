@@ -41,10 +41,16 @@ func (s *Server) CheckLimit(ctx context.Context, _ *usagev1.CheckLimitRequest) (
 		return nil, rpcError(ctx, s.log, err)
 	}
 
-	return &usagev1.CheckLimitResponse{
+	resp := &usagev1.CheckLimitResponse{
 		Allowed:   checked.Allowed,
 		Remaining: checked.Remaining,
-	}, nil
+	}
+	if checked.Owner.ID != uuid.Nil() {
+		resp.OwnerKind = string(checked.Owner.Kind)
+		resp.OwnerId = checked.Owner.ID.String()
+	}
+
+	return resp, nil
 }
 
 func ownerFromContext(ctx context.Context) (domain.Owner, error) {

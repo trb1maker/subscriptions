@@ -16,4 +16,8 @@ message CheckLimitRequest {}
 message CheckLimitResponse {
   bool allowed = 1;
   int64 remaining = 2;
+  // Владелец остатка, по которому принято решение. Пусто, если проекции нет.
+  // user или organization.
+  string owner_kind = 3;
+  string owner_id = 4;
 }
