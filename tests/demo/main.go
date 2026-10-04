@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -13,7 +14,26 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/tests/internal/httpjson"
+)
+
+const (
+	defaultDuration = 2 * time.Minute
+	defaultWorkers  = 8
+	readyFor        = time.Minute
+	retryPause      = 500 * time.Millisecond
+	healthFor       = 30 * time.Second
+	healthTryFor    = 2 * time.Second
+	generateTryFor  = 30 * time.Second
+	personalPrice   = 100
+	personalLimit   = 1000
+	nextPrice       = 200
+	nextLimit       = 1500
+	teamPrice       = 500
+	teamLimit       = 1000
+	percentile50    = 0.50
+	percentile95    = 0.95
 )
 
 func main() {
@@ -21,31 +41,44 @@ func main() {
 }
 
 func run() int {
+	log, err := logger.New(os.Stdout, "info")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "логгер: %v\n", err)
+
+		return 1
+	}
+
 	gateway := flag.String("gateway", "http://127.0.0.1:8080", "базовый URL Gateway")
 	webhookKey := flag.String("webhook-key", "webhook-secret", "значение заголовка X-Webhook-Key")
-	duration := flag.Duration("duration", 2*time.Minute, "длительность параллельной генерации")
-	concurrency := flag.Int("concurrency", 8, "число параллельных генераций")
+	duration := flag.Duration("duration", defaultDuration, "длительность параллельной генерации")
+	concurrency := flag.Int("concurrency", defaultWorkers, "число параллельных генераций")
 	flag.Parse()
 
 	ctx := context.Background()
-	if err := waitHealthy(ctx, *gateway); err != nil {
+	if err = waitHealthy(ctx, *gateway); err != nil {
 		fmt.Fprintf(os.Stderr, "gateway не ответил на /health: %v\nПоднимите стенд: task demo:up\n", err)
 
 		return 1
 	}
 
-	users, err := prepareReady(ctx, *gateway, *webhookKey)
+	users, err := prepareReady(ctx, log, *gateway, *webhookKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "сценарий не подготовлен: %v\n", err)
 
 		return 1
 	}
 
-	fmt.Printf("генерация %s, параллелизм %d\n", *duration, *concurrency)
+	log.InfoContext(ctx, "generation started", "duration", duration.String(), "concurrency", *concurrency)
 	total := generate(ctx, *gateway, users, *concurrency, *duration)
-	fmt.Printf("запросы %d, успех %d, ошибка генерации %d, отказ %d, сбой клиента %d\n",
-		total.requests, total.processed, total.failed, total.rejected, total.errors)
-	fmt.Printf("задержка p50 %s, p95 %s\n", percentile(total.latency, 0.50), percentile(total.latency, 0.95))
+	log.InfoContext(ctx, "generation finished",
+		"requests", total.requests,
+		"processed", total.processed,
+		"failed", total.failed,
+		"rejected", total.rejected,
+		"errors", total.errors,
+		"p50", percentile(total.latency, percentile50).String(),
+		"p95", percentile(total.latency, percentile95).String(),
+	)
 	if total.requests == 0 {
 		fmt.Fprintln(os.Stderr, "за время прогона не было ответов генерации")
 
@@ -68,13 +101,11 @@ type stats struct {
 	latency   []time.Duration
 }
 
-const readyFor = time.Minute
-
-func prepareReady(ctx context.Context, gateway, webhookKey string) ([]account, error) {
+func prepareReady(ctx context.Context, log *slog.Logger, gateway, webhookKey string) ([]account, error) {
 	deadline := time.Now().Add(readyFor)
 	var last error
 	for {
-		users, err := prepare(ctx, gateway, webhookKey)
+		users, err := prepare(ctx, log, gateway, webhookKey)
 		if err == nil {
 			return users, nil
 		}
@@ -84,11 +115,11 @@ func prepareReady(ctx context.Context, gateway, webhookKey string) ([]account, e
 			return nil, last
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(retryPause)
 	}
 }
 
-func prepare(ctx context.Context, gateway, webhookKey string) ([]account, error) {
+func prepare(ctx context.Context, log *slog.Logger, gateway, webhookKey string) ([]account, error) {
 	admin, err := register(ctx, gateway, "")
 	if err != nil {
 		return nil, err
@@ -103,17 +134,17 @@ func prepare(ctx context.Context, gateway, webhookKey string) ([]account, error)
 
 	orgToken := org["token"].(string)
 	orgID := org["organization_id"].(string)
-	personalID, err := tariff(ctx, gateway, orgToken, "demo-personal", 100, 1000, "b2c")
+	personalID, err := tariff(ctx, gateway, orgToken, "demo-personal", personalPrice, personalLimit, "b2c")
 	if err != nil {
 		return nil, err
 	}
 
-	nextID, err := tariff(ctx, gateway, orgToken, "demo-next", 200, 1500, "b2c")
+	nextID, err := tariff(ctx, gateway, orgToken, "demo-next", nextPrice, nextLimit, "b2c")
 	if err != nil {
 		return nil, err
 	}
 
-	teamID, err := tariff(ctx, gateway, orgToken, "demo-team", 500, 1000, "b2b")
+	teamID, err := tariff(ctx, gateway, orgToken, "demo-team", teamPrice, teamLimit, "b2b")
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +157,7 @@ func prepare(ctx context.Context, gateway, webhookKey string) ([]account, error)
 			return nil, regErr
 		}
 
-		subscriptionID, payErr := subscribeAndPay(ctx, gateway, webhookKey, user.token, personalID, 100)
+		subscriptionID, payErr := subscribeAndPay(ctx, gateway, webhookKey, user.token, personalID, personalPrice)
 		if payErr != nil {
 			return nil, payErr
 		}
@@ -145,9 +176,9 @@ func prepare(ctx context.Context, gateway, webhookKey string) ([]account, error)
 		return nil, err
 	}
 
-	fmt.Printf("смена тарифа: остаток %.0f\n", changed["message_allowance"].(float64))
+	log.InfoContext(ctx, "tariff changed", "message_allowance", changed["message_allowance"])
 
-	if _, err = subscribeAndPay(ctx, gateway, webhookKey, orgToken, teamID, 500); err != nil {
+	if _, err = subscribeAndPay(ctx, gateway, webhookKey, orgToken, teamID, teamPrice); err != nil {
 		return nil, err
 	}
 
@@ -160,7 +191,7 @@ func prepare(ctx context.Context, gateway, webhookKey string) ([]account, error)
 		users = append(users, member)
 	}
 
-	fmt.Printf("подготовлено участников: %d\n", len(users))
+	log.InfoContext(ctx, "participants ready", "count", len(users))
 
 	return users, nil
 }
@@ -215,7 +246,7 @@ func register(ctx context.Context, gateway, organizationID string) (account, err
 func call(ctx context.Context, method, rawURL string, header map[string]string, body any, status int) (map[string]any, error) {
 	resp, err := httpjson.Do(ctx, method, rawURL, header, body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request %s %s: %w", method, rawURL, err)
 	}
 
 	if resp.Status != status {
@@ -238,7 +269,7 @@ func generate(ctx context.Context, gateway string, users []account, concurrency 
 			for time.Now().Before(deadline) {
 				user := users[rand.IntN(len(users))]
 				started := time.Now()
-				reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				reqCtx, cancel := context.WithTimeout(ctx, generateTryFor)
 				resp, err := httpjson.Do(reqCtx, http.MethodPost, gateway+"/api/v1/generate", withKey(bearer(user.token), uuid.New().String()), map[string]string{
 					"prompt": uuid.New().String(),
 				})
@@ -282,10 +313,10 @@ func percentile(samples []time.Duration, p float64) time.Duration {
 }
 
 func waitHealthy(ctx context.Context, gateway string) error {
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(healthFor)
 	var last error
 	for time.Now().Before(deadline) {
-		reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		reqCtx, cancel := context.WithTimeout(ctx, healthTryFor)
 		resp, err := httpjson.Do(reqCtx, http.MethodGet, gateway+"/health", nil, nil)
 		cancel()
 		if err == nil && resp.Status == http.StatusOK {
@@ -297,7 +328,7 @@ func waitHealthy(ctx context.Context, gateway string) error {
 			last = fmt.Errorf("статус %d", resp.Status)
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(retryPause)
 	}
 
 	return last

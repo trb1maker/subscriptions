@@ -160,7 +160,10 @@ func (s *Service) lockOwner(id uuid.UUID) func() {
 	return lock.Unlock
 }
 
-const projectWait = 2 * time.Second
+const (
+	projectWait = 2 * time.Second
+	projectPoll = 20 * time.Millisecond
+)
 
 // ownerEvents ждёт, пока только что записанное событие станет видно в журнале.
 // ClickHouse может не отдать строку в том же запросе, что и вставка.
@@ -182,7 +185,7 @@ func (s *Service) ownerEvents(ctx context.Context, event domain.Event) ([]domain
 			return nil, fmt.Errorf("event not visible: %w", domain.ErrUnavailable)
 		}
 
-		timer := time.NewTimer(20 * time.Millisecond)
+		timer := time.NewTimer(projectPoll)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

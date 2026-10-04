@@ -40,7 +40,7 @@ func TestLimitsMatchEventsUnderLoad(t *testing.T) {
 			t.Log(started.Logs())
 		}
 
-		started.Close()
+		started.Close(ctx)
 	})
 
 	gateway := started.Gateways[0]

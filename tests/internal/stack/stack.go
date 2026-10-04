@@ -35,8 +35,13 @@ import (
 )
 
 const (
-	webhookKey = "webhook-secret"
-	healthyFor = 45 * time.Second
+	webhookKey        = "webhook-secret"
+	healthyFor        = 45 * time.Second
+	healthPoll        = 200 * time.Millisecond
+	shutdownFor       = 30 * time.Second
+	processStopFor    = 15 * time.Second
+	postgresReadyLogs = 2
+	scriptPerm        = 0o755
 )
 
 // Gateway — один процесс gateway с заданной эмуляцией.
@@ -74,7 +79,7 @@ func Start(parent context.Context, cfg Config) (started *Stack, err error) {
 	started = &Stack{ctx: ctx, cancel: cancel, logs: &logBuf{}}
 	defer func() {
 		if err != nil {
-			started.Close()
+			started.Close(ctx)
 		}
 	}()
 
@@ -102,11 +107,11 @@ func Start(parent context.Context, cfg Config) (started *Stack, err error) {
 	}
 
 	if err = migrate.Up(ctx, authDSN, authmigrations.FS); err != nil {
-		return started, err
+		return started, fmt.Errorf("migrate auth: %w", err)
 	}
 
 	if err = migrate.Up(ctx, subDSN, subscriptionsmigrations.FS); err != nil {
-		return started, err
+		return started, fmt.Errorf("migrate subscriptions: %w", err)
 	}
 
 	redisURL, err := started.redis(ctx)
@@ -120,7 +125,7 @@ func Start(parent context.Context, cfg Config) (started *Stack, err error) {
 	}
 
 	if err = migrate.UpClickHouse(ctx, clickDSN, usagemigrations.FS); err != nil {
-		return started, err
+		return started, fmt.Errorf("migrate usage: %w", err)
 	}
 
 	natsURL, err := started.nats(ctx)
@@ -251,24 +256,24 @@ func Start(parent context.Context, cfg Config) (started *Stack, err error) {
 
 	started.Redis, err = redispkg.New(ctx, redisURL)
 	if err != nil {
-		return started, err
+		return started, fmt.Errorf("open redis: %w", err)
 	}
 
 	started.Click, err = clickhouse.Open(ctx, clickDSN)
 	if err != nil {
-		return started, err
+		return started, fmt.Errorf("open clickhouse: %w", err)
 	}
 
 	started.Pool, err = pgpool.NewPool(ctx, subDSN)
 	if err != nil {
-		return started, err
+		return started, fmt.Errorf("open postgres: %w", err)
 	}
 
 	return started, nil
 }
 
 // Close останавливает процессы и контейнеры. Повторный вызов безопасен.
-func (s *Stack) Close() {
+func (s *Stack) Close(ctx context.Context) {
 	if s == nil || s.cancel == nil {
 		return
 	}
@@ -291,10 +296,10 @@ func (s *Stack) Close() {
 		s.Pool.Close()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFor)
 	defer cancel()
 	for _, container := range s.containers {
-		_ = container.Terminate(ctx)
+		_ = container.Terminate(stopCtx)
 	}
 
 	for _, dir := range s.dirs {
@@ -335,7 +340,7 @@ func (s *Stack) postgres(ctx context.Context) (string, error) {
 		postgres.WithDatabase("auth"),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
+				WithOccurrence(postgresReadyLogs).
 				WithStartupTimeout(time.Minute),
 		),
 	)
@@ -404,7 +409,7 @@ func (s *Stack) nats(ctx context.Context) (string, error) {
 func (s *Stack) process(ctx context.Context, bin string, env map[string]string) error {
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.WaitDelay = 15 * time.Second
+	cmd.WaitDelay = processStopFor
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
 	for key, value := range env {
 		cmd.Env = append(cmd.Env, key+"="+value)
@@ -426,7 +431,7 @@ func waitHealthy(ctx context.Context, addrs []string) error {
 	for _, addr := range addrs {
 		for {
 			if err := ctx.Err(); err != nil {
-				return err
+				return fmt.Errorf("health: %w", err)
 			}
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/health", nil)
@@ -444,7 +449,7 @@ func waitHealthy(ctx context.Context, addrs []string) error {
 				return fmt.Errorf("health timeout for %s", addr)
 			}
 
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(healthPoll)
 		}
 	}
 
@@ -504,7 +509,7 @@ func generateCerts(root string) (string, error) {
 	}
 
 	target := filepath.Join(dir, "generate.sh")
-	if err = os.WriteFile(target, script, 0o755); err != nil {
+	if err = os.WriteFile(target, script, scriptPerm); err != nil {
 		_ = os.RemoveAll(dir)
 
 		return "", fmt.Errorf("write cert script: %w", err)
@@ -524,7 +529,7 @@ func generateCerts(root string) (string, error) {
 func createDatabase(ctx context.Context, dsn, name string) error {
 	pool, err := pgpool.NewPool(ctx, dsn)
 	if err != nil {
-		return err
+		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pool.Close()
 
@@ -603,7 +608,12 @@ func (l *logBuf) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	return l.buf.Write(p)
+	n, err := l.buf.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("buffer log: %w", err)
+	}
+
+	return n, nil
 }
 
 func (l *logBuf) String() string {
