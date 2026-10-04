@@ -28,10 +28,13 @@ type Applier interface {
 }
 
 // Run читает поток USAGE по одному сообщению, пока не закроется ctx.
-func Run(ctx context.Context, js jetstream.JetStream, applier Applier, log *slog.Logger) error {
+// replicas — число копий потока и потребителя. Значение меньше 1 оставляет одну копию.
+func Run(ctx context.Context, js jetstream.JetStream, applier Applier, log *slog.Logger, replicas int) error {
+	copies := normalizeReplicas(replicas)
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:     streamName,
 		Subjects: []string{subjectFilter},
+		Replicas: copies,
 	})
 	if err != nil {
 		return fmt.Errorf("ensure usage stream: %w", err)
@@ -42,6 +45,7 @@ func Run(ctx context.Context, js jetstream.JetStream, applier Applier, log *slog
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		FilterSubject: subjectFilter,
 		AckWait:       ackWait,
+		Replicas:      copies,
 	})
 	if err != nil {
 		return fmt.Errorf("ensure usage consumer: %w", err)
@@ -70,6 +74,14 @@ func Run(ctx context.Context, js jetstream.JetStream, applier Applier, log *slog
 
 		handle(ctx, msg, applier, log)
 	}
+}
+
+func normalizeReplicas(replicas int) int {
+	if replicas < 1 {
+		return 1
+	}
+
+	return replicas
 }
 
 func handle(ctx context.Context, msg jetstream.Msg, applier Applier, log *slog.Logger) {
