@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type requestIDKey struct{}
@@ -38,6 +40,14 @@ type contextHandler struct {
 func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 	if id := RequestID(ctx); id != "" {
 		record.AddAttrs(slog.String("request_id", id))
+	}
+
+	span := trace.SpanFromContext(ctx).SpanContext()
+	if span.IsValid() {
+		record.AddAttrs(
+			slog.String("trace_id", span.TraceID().String()),
+			slog.String("span_id", span.SpanID().String()),
+		)
 	}
 
 	if err := h.Handler.Handle(ctx, record); err != nil {
