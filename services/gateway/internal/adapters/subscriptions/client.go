@@ -105,6 +105,21 @@ func (c *Client) GetSubscription(ctx context.Context, subscriptionID string) (ap
 	return c.subscription(ctx, resp)
 }
 
+// ProcessPayment передаёт принятый вебхук в Subscriptions.
+func (c *Client) ProcessPayment(ctx context.Context, paymentID, subscriptionID string, amountMinor int64, occurredAt time.Time) error {
+	_, err := c.api.ProcessPayment(ctx, &subscriptionsv1.ProcessPaymentRequest{
+		PaymentId:      paymentID,
+		SubscriptionId: subscriptionID,
+		AmountMinor:    amountMinor,
+		OccurredAt:     occurredAt.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return c.failure(ctx, err)
+	}
+
+	return nil
+}
+
 func tariffFrom(tariff *subscriptionsv1.Tariff) app.Tariff {
 	if tariff == nil {
 		return app.Tariff{}

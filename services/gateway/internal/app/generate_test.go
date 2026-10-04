@@ -281,6 +281,10 @@ func (f *fakeSubscriptions) GetSubscription(context.Context, string) (app.Subscr
 	return app.Subscription{}, nil
 }
 
+func (f *fakeSubscriptions) ProcessPayment(context.Context, string, string, int64, time.Time) error {
+	return nil
+}
+
 type fakeUsage struct {
 	status app.LimitStatus
 	err    error

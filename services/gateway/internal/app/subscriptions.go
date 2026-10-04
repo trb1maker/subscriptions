@@ -38,4 +38,5 @@ type Subscriptions interface {
 	ChangeSubscription(ctx context.Context, idempotencyKey, subscriptionID, tariffID string) (Subscription, error)
 	GetSubscription(ctx context.Context, subscriptionID string) (Subscription, error)
 	CheckSubscription(ctx context.Context) (SubscriptionStatus, error)
+	ProcessPayment(ctx context.Context, paymentID, subscriptionID string, amountMinor int64, occurredAt time.Time) error
 }

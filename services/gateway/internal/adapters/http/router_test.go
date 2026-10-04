@@ -230,9 +230,40 @@ func TestPaymentWebhook(t *testing.T) {
 	wrong := postRaw(t, router, "/webhooks/payments", map[string]string{"X-Webhook-Key": "other"})
 	require.Equal(t, http.StatusUnauthorized, wrong.Code)
 
-	ok := postRaw(t, router, "/webhooks/payments", map[string]string{"X-Webhook-Key": webhookKey})
+	subscriptions := &fakeSubscriptions{}
+	body := `{"payment_id":"11111111-1111-1111-1111-111111111111","subscription_id":"22222222-2222-2222-2222-222222222222","amount_minor":100,"occurred_at":"2026-10-04T12:00:00Z"}`
+	ok := postJSON(t, newRouterFull(t, &fakeAuth{}, subscriptions, &stubGenerator{}), "/webhooks/payments", body,
+		map[string]string{"X-Webhook-Key": webhookKey},
+	)
 	require.Equal(t, http.StatusAccepted, ok.Code)
 	require.Empty(t, ok.Body.Bytes())
+	require.Equal(t, 1, subscriptions.paymentCalls)
+	require.Equal(t, "11111111-1111-1111-1111-111111111111", subscriptions.paymentID)
+	require.Equal(t, int64(100), subscriptions.paymentAmount)
+
+	broken := postJSON(t, newRouter(t, &fakeAuth{}), "/webhooks/payments", `{"payment_id":"not-a-uuid"}`,
+		map[string]string{"X-Webhook-Key": webhookKey},
+	)
+	require.Equal(t, http.StatusBadRequest, broken.Code)
+	require.Equal(t, "invalid_argument", errorCode(t, broken))
+
+	subscriptions.paymentErr = domain.ErrNotFound
+	notFound := postJSON(t, newRouterFull(t, &fakeAuth{}, subscriptions, &stubGenerator{}), "/webhooks/payments", body,
+		map[string]string{"X-Webhook-Key": webhookKey},
+	)
+	require.Equal(t, http.StatusNotFound, notFound.Code)
+
+	subscriptions.paymentErr = domain.ErrConflict
+	conflict := postJSON(t, newRouterFull(t, &fakeAuth{}, subscriptions, &stubGenerator{}), "/webhooks/payments", body,
+		map[string]string{"X-Webhook-Key": webhookKey},
+	)
+	require.Equal(t, http.StatusConflict, conflict.Code)
+
+	subscriptions.paymentErr = domain.ErrUnavailable
+	unavailable := postJSON(t, newRouterFull(t, &fakeAuth{}, subscriptions, &stubGenerator{}), "/webhooks/payments", body,
+		map[string]string{"X-Webhook-Key": webhookKey},
+	)
+	require.Equal(t, http.StatusServiceUnavailable, unavailable.Code)
 }
 
 func TestPaymentWebhookRejectsLargeBody(t *testing.T) {
@@ -241,6 +272,7 @@ func TestPaymentWebhookRejectsLargeBody(t *testing.T) {
 	const maxBody = 1 << 20
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/payments", strings.NewReader(strings.Repeat("a", maxBody+1)))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Key", webhookKey)
 	rec := httptest.NewRecorder()
 	newRouter(t, &fakeAuth{}).ServeHTTP(rec, req)
@@ -322,6 +354,13 @@ type fakeSubscriptions struct {
 	subKey      string
 	subTariffID string
 	subID       string
+
+	paymentCalls          int
+	paymentErr            error
+	paymentID             string
+	paymentSubscriptionID string
+	paymentAmount         int64
+	paymentOccurredAt     time.Time
 }
 
 func (f *fakeSubscriptions) CreateTariff(ctx context.Context, idempotencyKey, name string, price int64, limit int32, kind string, base bool) (app.Tariff, error) {
@@ -367,6 +406,16 @@ func (f *fakeSubscriptions) GetSubscription(_ context.Context, subscriptionID st
 
 func (f *fakeSubscriptions) CheckSubscription(context.Context) (app.SubscriptionStatus, error) {
 	return app.SubscriptionStatus{}, nil
+}
+
+func (f *fakeSubscriptions) ProcessPayment(_ context.Context, paymentID, subscriptionID string, amountMinor int64, occurredAt time.Time) error {
+	f.paymentCalls++
+	f.paymentID = paymentID
+	f.paymentSubscriptionID = subscriptionID
+	f.paymentAmount = amountMinor
+	f.paymentOccurredAt = occurredAt
+
+	return f.paymentErr
 }
 
 func TestGenerate(t *testing.T) {

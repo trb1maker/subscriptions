@@ -92,6 +92,9 @@ func TestGenerateDebitsClickHouse(t *testing.T) {
 		"SUBSCRIPTIONS_DATABASE_URL":   subDSN,
 		"AUTH_GRPC_ADDR":               authGRPC,
 		"AUTH_GRPC_SERVER_NAME":        "localhost",
+		"USAGE_GRPC_ADDR":              usageGRPC,
+		"USAGE_GRPC_SERVER_NAME":       "localhost",
+		"SUBSCRIPTIONS_NATS_URL":       natsURL,
 		"SUBSCRIPTIONS_REQUEST_PEPPER": "pepper",
 		"TLS_CERT_FILE":                filepath.Join(certs, "subscriptions.crt"),
 		"TLS_KEY_FILE":                 filepath.Join(certs, "subscriptions.key"),
@@ -214,6 +217,41 @@ func TestGenerateDebitsClickHouse(t *testing.T) {
 
 		return outcome == "failed" && tokens == failedTokens && redisLimit(t, ctx, redisClient, userID) == allowance-1
 	}, 20*time.Second, 100*time.Millisecond)
+
+	payer := postJSON(t, ctx, base+"/api/v1/users", map[string]string{"Idempotency-Key": "user-2"}, map[string]string{
+		"email": "grace@example.com", "password": "password1",
+	}, http.StatusCreated)
+	payerID := payer["user_id"].(string)
+	payerToken := payer["token"].(string)
+	created := postJSON(t, ctx, base+"/api/v1/subscriptions", map[string]string{
+		"Authorization": "Bearer " + payerToken, "Idempotency-Key": "sub-2",
+	}, map[string]string{"tariff_id": tariffID}, http.StatusCreated)
+	subscriptionID := created["id"].(string)
+	paymentID := uuid.New().String()
+	webhook := map[string]any{
+		"payment_id":      paymentID,
+		"subscription_id": subscriptionID,
+		"amount_minor":    100,
+		"occurred_at":     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	postJSON(t, ctx, base+"/webhooks/payments", map[string]string{"X-Webhook-Key": "webhook-secret"}, webhook, http.StatusAccepted)
+	require.Eventually(t, func() bool {
+		return redisLimit(t, ctx, redisClient, payerID) == 10
+	}, 20*time.Second, 100*time.Millisecond)
+
+	paid := getJSON(t, ctx, base+"/api/v1/subscriptions/"+subscriptionID, map[string]string{
+		"Authorization": "Bearer " + payerToken,
+	}, http.StatusOK)
+	require.Equal(t, float64(10), paid["message_allowance"])
+	periodEnd := paid["current_period_end"].(string)
+	require.NotEqual(t, created["current_period_end"], periodEnd)
+
+	postJSON(t, ctx, base+"/webhooks/payments", map[string]string{"X-Webhook-Key": "webhook-secret"}, webhook, http.StatusAccepted)
+	replayed := getJSON(t, ctx, base+"/api/v1/subscriptions/"+subscriptionID, map[string]string{
+		"Authorization": "Bearer " + payerToken,
+	}, http.StatusOK)
+	require.Equal(t, periodEnd, replayed["current_period_end"])
+	require.Equal(t, int64(10), redisLimit(t, ctx, redisClient, payerID))
 }
 
 func publishAllowance(t *testing.T, natsURL, userID string) error {
@@ -311,6 +349,33 @@ func postJSON(t *testing.T, ctx context.Context, url string, header map[string]s
 	require.NoError(t, err)
 	require.Equal(t, status, resp.StatusCode, string(raw))
 
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+
+	return decoded
+}
+
+func getJSON(t *testing.T, ctx context.Context, rawURL string, header map[string]string, status int) map[string]any {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	require.NoError(t, err)
+	for key, value := range header {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, status, resp.StatusCode, string(raw))
+
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 
@@ -352,10 +417,10 @@ func startProcess(t *testing.T, ctx context.Context, bin string, env map[string]
 	cmd.Stderr = logs
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() {
+		_ = cmd.Wait()
 		if t.Failed() {
 			t.Logf("%s\n%s", bin, logs.String())
 		}
-		_ = cmd.Wait()
 	})
 }
 
