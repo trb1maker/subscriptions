@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "github.com/trb1maker/subscriptions/api/gen/auth/v1;authv1";
+
+// AuthService регистрирует пользователей и организации и выдаёт JWT.
+service AuthService {
+  // Register создаёт пользователя и возвращает JWT. Повтор с тем же ключом идемпотентности не создаёт второго пользователя.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Login проверяет пароль и возвращает JWT.
+  rpc Login(LoginRequest) returns (LoginResponse);
+  // CreateOrganization создаёт организацию и возвращает JWT организации.
+  rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse);
+  // ValidateToken проверяет подпись и срок JWT.
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message RegisterRequest {
+  // Ключ уникален среди всех команд Auth.
+  string idempotency_key = 1;
+  string email = 2;
+  string password = 3;
+  optional string organization_id = 4;
+}
+
+message RegisterResponse {
+  string user_id = 1;
+  string token = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+}
+
+message CreateOrganizationRequest {
+  // Ключ уникален среди всех команд Auth.
+  string idempotency_key = 1;
+  string name = 2;
+}
+
+message CreateOrganizationResponse {
+  string organization_id = 1;
+  string token = 2;
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  string subject_id = 1;
+  string type = 2;
+  repeated string roles = 3;
+}
