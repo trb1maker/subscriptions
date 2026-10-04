@@ -103,6 +103,8 @@ func mapErr(err error) error {
 		return domain.ErrInvalidArgument
 	case codes.Unauthenticated:
 		return domain.ErrUnauthenticated
+	case codes.PermissionDenied:
+		return domain.ErrForbidden
 	case codes.NotFound:
 		return domain.ErrNotFound
 	case codes.AlreadyExists, codes.FailedPrecondition:

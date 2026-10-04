@@ -10,4 +10,5 @@ var (
 	ErrConflict          = errors.New("conflict")
 	ErrUnavailable       = errors.New("unavailable")
 	ErrInternal          = errors.New("internal")
+	ErrForbidden         = errors.New("forbidden")
 )

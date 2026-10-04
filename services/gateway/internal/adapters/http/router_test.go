@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -303,13 +304,143 @@ func (f *fakeAuth) ValidateToken(context.Context, string) (app.Identity, error) 
 	return f.identity, f.validateErr
 }
 
+type fakeSubscriptions struct {
+	tariff      app.Tariff
+	tariffErr   error
+	tariffCalls int
+	tariffCtx   context.Context
+	tariffName  string
+	tariffKey   string
+	tariffPrice int64
+	tariffLimit int32
+	tariffType  string
+	tariffBase  bool
+	list        []app.Tariff
+	sub         app.Subscription
+	subErr      error
+	subCalls    int
+	subKey      string
+	subTariffID string
+	subID       string
+}
+
+func (f *fakeSubscriptions) CreateTariff(ctx context.Context, idempotencyKey, name string, price int64, limit int32, kind string, base bool) (app.Tariff, error) {
+	f.tariffCalls++
+	f.tariffCtx = ctx
+	f.tariffKey = idempotencyKey
+	f.tariffName = name
+	f.tariffPrice = price
+	f.tariffLimit = limit
+	f.tariffType = kind
+	f.tariffBase = base
+
+	return f.tariff, f.tariffErr
+}
+
+func (f *fakeSubscriptions) ListTariffs(context.Context) ([]app.Tariff, error) {
+	return f.list, f.tariffErr
+}
+
+func (f *fakeSubscriptions) CreateSubscription(_ context.Context, idempotencyKey, tariffID string) (app.Subscription, error) {
+	f.subCalls++
+	f.subKey = idempotencyKey
+	f.subTariffID = tariffID
+
+	return f.sub, f.subErr
+}
+
+func (f *fakeSubscriptions) ChangeSubscription(_ context.Context, idempotencyKey, subscriptionID, tariffID string) (app.Subscription, error) {
+	f.subCalls++
+	f.subKey = idempotencyKey
+	f.subID = subscriptionID
+	f.subTariffID = tariffID
+
+	return f.sub, f.subErr
+}
+
+func (f *fakeSubscriptions) GetSubscription(_ context.Context, subscriptionID string) (app.Subscription, error) {
+	f.subCalls++
+	f.subID = subscriptionID
+
+	return f.sub, f.subErr
+}
+
+func TestCreateTariffRequiresAdminRoleAtService(t *testing.T) {
+	t.Parallel()
+
+	subs := &fakeSubscriptions{tariffErr: domain.ErrForbidden}
+	auth := &fakeAuth{identity: app.Identity{SubjectID: "user-1", Kind: "user", Roles: []string{"user"}}}
+	rec := postJSON(t, newRouterWith(t, auth, subs), "/api/v1/tariffs",
+		`{"name":"base","monthly_price_minor":0,"message_limit":10,"type":"b2c","is_base_tariff":true}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "tariff-1"},
+	)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "forbidden", errorCode(t, rec))
+	require.Equal(t, 1, subs.tariffCalls)
+}
+
+func TestCreateTariffAndSubscription(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	subs := &fakeSubscriptions{
+		tariff: app.Tariff{ID: "tariff-1", Name: "base", MonthlyPriceMinor: 0, MessageLimit: 10, Type: "b2c", IsBase: true},
+		sub: app.Subscription{
+			ID: "sub-1", TariffID: "tariff-1", Status: "active", MessageAllowance: 10,
+			PeriodStart: start, PeriodEnd: start.AddDate(0, 1, 0),
+		},
+	}
+	auth := &fakeAuth{identity: app.Identity{SubjectID: "org-1", Kind: "organization", Roles: []string{"admin"}}}
+	router := newRouterWith(t, auth, subs)
+
+	created := postJSON(t, router, "/api/v1/tariffs",
+		`{"name":"base","monthly_price_minor":0,"message_limit":10,"type":"b2c","is_base_tariff":true}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "tariff-1"},
+	)
+	require.Equal(t, http.StatusCreated, created.Code)
+	require.Equal(t, "base", subs.tariffName)
+	require.Equal(t, "tariff-1", subs.tariffKey)
+	require.True(t, subs.tariffBase)
+	got, ok := caller.FromContext(subs.tariffCtx)
+	require.True(t, ok)
+	require.Equal(t, "org-1", got.SubjectID)
+	require.Equal(t, []string{"admin"}, got.Roles)
+
+	subscribed := postJSON(t, router, "/api/v1/subscriptions", `{"tariff_id":"tariff-1"}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "sub-1"},
+	)
+	require.Equal(t, http.StatusCreated, subscribed.Code)
+	require.Equal(t, "sub-1", subs.subKey)
+	require.Equal(t, "tariff-1", subs.subTariffID)
+
+	var body struct {
+		ID               string `json:"id"`
+		MessageAllowance int64  `json:"message_allowance"`
+		Status           string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(subscribed.Body.Bytes(), &body))
+	require.Equal(t, "sub-1", body.ID)
+	require.Equal(t, int64(10), body.MessageAllowance)
+	require.Equal(t, "active", body.Status)
+}
+
+func newRouterWith(t *testing.T, auth app.Auth, subscriptions app.Subscriptions) http.Handler {
+	t.Helper()
+
+	log, err := logger.New(io.Discard, "error")
+	require.NoError(t, err)
+
+	return httpapi.NewRouter(log, auth, subscriptions, webhookKey)
+}
+
 func newRouter(t *testing.T, auth app.Auth) http.Handler {
 	t.Helper()
 
 	log, err := logger.New(io.Discard, "error")
 	require.NoError(t, err)
 
-	return httpapi.NewRouter(log, auth, webhookKey)
+	return httpapi.NewRouter(log, auth, &fakeSubscriptions{}, webhookKey)
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string, header map[string]string) *httptest.ResponseRecorder {
