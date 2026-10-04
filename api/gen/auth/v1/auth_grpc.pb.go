@@ -23,6 +23,7 @@ const (
 	AuthService_Login_FullMethodName              = "/auth.v1.AuthService/Login"
 	AuthService_CreateOrganization_FullMethodName = "/auth.v1.AuthService/CreateOrganization"
 	AuthService_ValidateToken_FullMethodName      = "/auth.v1.AuthService/ValidateToken"
+	AuthService_LookupSubject_FullMethodName      = "/auth.v1.AuthService/LookupSubject"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -39,6 +40,9 @@ type AuthServiceClient interface {
 	CreateOrganization(ctx context.Context, in *CreateOrganizationRequest, opts ...grpc.CallOption) (*CreateOrganizationResponse, error)
 	// ValidateToken проверяет подпись и срок JWT.
 	ValidateToken(ctx context.Context, in *ValidateTokenRequest, opts ...grpc.CallOption) (*ValidateTokenResponse, error)
+	// LookupSubject сообщает, что пользователь или организация существуют.
+	// Для пользователя возвращает организацию, если он к ней привязан.
+	LookupSubject(ctx context.Context, in *LookupSubjectRequest, opts ...grpc.CallOption) (*LookupSubjectResponse, error)
 }
 
 type authServiceClient struct {
@@ -89,6 +93,16 @@ func (c *authServiceClient) ValidateToken(ctx context.Context, in *ValidateToken
 	return out, nil
 }
 
+func (c *authServiceClient) LookupSubject(ctx context.Context, in *LookupSubjectRequest, opts ...grpc.CallOption) (*LookupSubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LookupSubjectResponse)
+	err := c.cc.Invoke(ctx, AuthService_LookupSubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -103,6 +117,9 @@ type AuthServiceServer interface {
 	CreateOrganization(context.Context, *CreateOrganizationRequest) (*CreateOrganizationResponse, error)
 	// ValidateToken проверяет подпись и срок JWT.
 	ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error)
+	// LookupSubject сообщает, что пользователь или организация существуют.
+	// Для пользователя возвращает организацию, если он к ней привязан.
+	LookupSubject(context.Context, *LookupSubjectRequest) (*LookupSubjectResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -124,6 +141,9 @@ func (UnimplementedAuthServiceServer) CreateOrganization(context.Context, *Creat
 }
 func (UnimplementedAuthServiceServer) ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ValidateToken not implemented")
+}
+func (UnimplementedAuthServiceServer) LookupSubject(context.Context, *LookupSubjectRequest) (*LookupSubjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LookupSubject not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -218,6 +238,24 @@ func _AuthService_ValidateToken_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_LookupSubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupSubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).LookupSubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_LookupSubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).LookupSubject(ctx, req.(*LookupSubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -240,6 +278,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateToken",
 			Handler:    _AuthService_ValidateToken_Handler,
+		},
+		{
+			MethodName: "LookupSubject",
+			Handler:    _AuthService_LookupSubject_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

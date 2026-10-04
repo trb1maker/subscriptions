@@ -129,6 +129,37 @@ func TestCreateOrganizationReplay(t *testing.T) {
 	requireCode(t, err, codes.FailedPrecondition)
 }
 
+func TestLookupSubject(t *testing.T) {
+	t.Parallel()
+
+	srv := newServer(t)
+	created, err := srv.Register(context.Background(), &authv1.RegisterRequest{
+		IdempotencyKey: "key-1",
+		Email:          "ada@example.com",
+		Password:       "long-enough",
+	})
+	require.NoError(t, err)
+
+	found, err := srv.LookupSubject(context.Background(), &authv1.LookupSubjectRequest{
+		SubjectId: created.GetUserId(),
+		Type:      string(domain.PrincipalUser),
+	})
+	require.NoError(t, err)
+	require.Empty(t, found.GetOrganizationId())
+
+	_, err = srv.LookupSubject(context.Background(), &authv1.LookupSubjectRequest{
+		SubjectId: uuid.New().String(),
+		Type:      string(domain.PrincipalUser),
+	})
+	requireCode(t, err, codes.NotFound)
+
+	_, err = srv.LookupSubject(context.Background(), &authv1.LookupSubjectRequest{
+		SubjectId: "not-a-uuid",
+		Type:      string(domain.PrincipalUser),
+	})
+	requireCode(t, err, codes.InvalidArgument)
+}
+
 func newServer(t *testing.T) *grpcapi.Server {
 	t.Helper()
 
@@ -238,4 +269,22 @@ func (m *memStore) UserByEmail(_ context.Context, email string) (domain.User, er
 	}
 
 	return m.users[id], nil
+}
+
+func (m *memStore) UserByID(_ context.Context, id uuid.UUID) (domain.User, error) {
+	user, ok := m.users[id]
+	if !ok {
+		return domain.User{}, domain.ErrNotFound
+	}
+
+	return user, nil
+}
+
+func (m *memStore) OrganizationByID(_ context.Context, id uuid.UUID) (domain.Organization, error) {
+	org, ok := m.organizations[id]
+	if !ok {
+		return domain.Organization{}, domain.ErrNotFound
+	}
+
+	return org, nil
 }

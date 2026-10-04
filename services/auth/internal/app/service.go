@@ -20,6 +20,8 @@ type Store interface {
 	RegisterUser(ctx context.Context, user domain.User, key string, requestHash []byte) (domain.User, error)
 	CreateOrganization(ctx context.Context, org domain.Organization, key string, requestHash []byte) (domain.Organization, error)
 	UserByEmail(ctx context.Context, email string) (domain.User, error)
+	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
+	OrganizationByID(ctx context.Context, id uuid.UUID) (domain.Organization, error)
 }
 
 // Passwords хеширует пароль и сверяет его с хешем.

@@ -14,6 +14,9 @@ service AuthService {
   rpc CreateOrganization(CreateOrganizationRequest) returns (CreateOrganizationResponse);
   // ValidateToken проверяет подпись и срок JWT.
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  // LookupSubject сообщает, что пользователь или организация существуют.
+  // Для пользователя возвращает организацию, если он к ней привязан.
+  rpc LookupSubject(LookupSubjectRequest) returns (LookupSubjectResponse);
 }
 
 message RegisterRequest {
@@ -57,4 +60,14 @@ message ValidateTokenResponse {
   string subject_id = 1;
   string type = 2;
   repeated string roles = 3;
+}
+
+message LookupSubjectRequest {
+  string subject_id = 1;
+  // user или organization.
+  string type = 2;
+}
+
+message LookupSubjectResponse {
+  optional string organization_id = 1;
 }

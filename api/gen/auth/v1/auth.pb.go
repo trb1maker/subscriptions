@@ -22,11 +22,12 @@ const (
 )
 
 type RegisterRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Email          string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	Password       string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
-	OrganizationId *string                `protobuf:"bytes,4,opt,name=organization_id,json=organizationId,proto3,oneof" json:"organization_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ключ уникален среди всех команд Auth.
+	IdempotencyKey string  `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Email          string  `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Password       string  `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	OrganizationId *string `protobuf:"bytes,4,opt,name=organization_id,json=organizationId,proto3,oneof" json:"organization_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -238,9 +239,10 @@ func (x *LoginResponse) GetToken() string {
 }
 
 type CreateOrganizationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ключ уникален среди всех команд Auth.
+	IdempotencyKey string `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Name           string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -445,6 +447,103 @@ func (x *ValidateTokenResponse) GetRoles() []string {
 	return nil
 }
 
+type LookupSubjectRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SubjectId string                 `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	// user или organization.
+	Type          string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LookupSubjectRequest) Reset() {
+	*x = LookupSubjectRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupSubjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupSubjectRequest) ProtoMessage() {}
+
+func (x *LookupSubjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupSubjectRequest.ProtoReflect.Descriptor instead.
+func (*LookupSubjectRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *LookupSubjectRequest) GetSubjectId() string {
+	if x != nil {
+		return x.SubjectId
+	}
+	return ""
+}
+
+func (x *LookupSubjectRequest) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+type LookupSubjectResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrganizationId *string                `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3,oneof" json:"organization_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *LookupSubjectResponse) Reset() {
+	*x = LookupSubjectResponse{}
+	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupSubjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupSubjectResponse) ProtoMessage() {}
+
+func (x *LookupSubjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupSubjectResponse.ProtoReflect.Descriptor instead.
+func (*LookupSubjectResponse) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *LookupSubjectResponse) GetOrganizationId() string {
+	if x != nil && x.OrganizationId != nil {
+		return *x.OrganizationId
+	}
+	return ""
+}
+
 var File_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_auth_v1_auth_proto_rawDesc = "" +
@@ -476,12 +575,20 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
-	"\x05roles\x18\x03 \x03(\tR\x05roles2\xb5\x02\n" +
+	"\x05roles\x18\x03 \x03(\tR\x05roles\"I\n" +
+	"\x14LookupSubjectRequest\x12\x1d\n" +
+	"\n" +
+	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\"Y\n" +
+	"\x15LookupSubjectResponse\x12,\n" +
+	"\x0forganization_id\x18\x01 \x01(\tH\x00R\x0eorganizationId\x88\x01\x01B\x12\n" +
+	"\x10_organization_id2\x85\x03\n" +
 	"\vAuthService\x12?\n" +
 	"\bRegister\x12\x18.auth.v1.RegisterRequest\x1a\x19.auth.v1.RegisterResponse\x126\n" +
 	"\x05Login\x12\x15.auth.v1.LoginRequest\x1a\x16.auth.v1.LoginResponse\x12]\n" +
 	"\x12CreateOrganization\x12\".auth.v1.CreateOrganizationRequest\x1a#.auth.v1.CreateOrganizationResponse\x12N\n" +
-	"\rValidateToken\x12\x1d.auth.v1.ValidateTokenRequest\x1a\x1e.auth.v1.ValidateTokenResponseB;Z9github.com/trb1maker/subscriptions/api/gen/auth/v1;authv1b\x06proto3"
+	"\rValidateToken\x12\x1d.auth.v1.ValidateTokenRequest\x1a\x1e.auth.v1.ValidateTokenResponse\x12N\n" +
+	"\rLookupSubject\x12\x1d.auth.v1.LookupSubjectRequest\x1a\x1e.auth.v1.LookupSubjectResponseB;Z9github.com/trb1maker/subscriptions/api/gen/auth/v1;authv1b\x06proto3"
 
 var (
 	file_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -495,7 +602,7 @@ func file_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_auth_v1_auth_proto_rawDescData
 }
 
-var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_auth_v1_auth_proto_goTypes = []any{
 	(*RegisterRequest)(nil),            // 0: auth.v1.RegisterRequest
 	(*RegisterResponse)(nil),           // 1: auth.v1.RegisterResponse
@@ -505,18 +612,22 @@ var file_auth_v1_auth_proto_goTypes = []any{
 	(*CreateOrganizationResponse)(nil), // 5: auth.v1.CreateOrganizationResponse
 	(*ValidateTokenRequest)(nil),       // 6: auth.v1.ValidateTokenRequest
 	(*ValidateTokenResponse)(nil),      // 7: auth.v1.ValidateTokenResponse
+	(*LookupSubjectRequest)(nil),       // 8: auth.v1.LookupSubjectRequest
+	(*LookupSubjectResponse)(nil),      // 9: auth.v1.LookupSubjectResponse
 }
 var file_auth_v1_auth_proto_depIdxs = []int32{
 	0, // 0: auth.v1.AuthService.Register:input_type -> auth.v1.RegisterRequest
 	2, // 1: auth.v1.AuthService.Login:input_type -> auth.v1.LoginRequest
 	4, // 2: auth.v1.AuthService.CreateOrganization:input_type -> auth.v1.CreateOrganizationRequest
 	6, // 3: auth.v1.AuthService.ValidateToken:input_type -> auth.v1.ValidateTokenRequest
-	1, // 4: auth.v1.AuthService.Register:output_type -> auth.v1.RegisterResponse
-	3, // 5: auth.v1.AuthService.Login:output_type -> auth.v1.LoginResponse
-	5, // 6: auth.v1.AuthService.CreateOrganization:output_type -> auth.v1.CreateOrganizationResponse
-	7, // 7: auth.v1.AuthService.ValidateToken:output_type -> auth.v1.ValidateTokenResponse
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	8, // 4: auth.v1.AuthService.LookupSubject:input_type -> auth.v1.LookupSubjectRequest
+	1, // 5: auth.v1.AuthService.Register:output_type -> auth.v1.RegisterResponse
+	3, // 6: auth.v1.AuthService.Login:output_type -> auth.v1.LoginResponse
+	5, // 7: auth.v1.AuthService.CreateOrganization:output_type -> auth.v1.CreateOrganizationResponse
+	7, // 8: auth.v1.AuthService.ValidateToken:output_type -> auth.v1.ValidateTokenResponse
+	9, // 9: auth.v1.AuthService.LookupSubject:output_type -> auth.v1.LookupSubjectResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -528,13 +639,14 @@ func file_auth_v1_auth_proto_init() {
 		return
 	}
 	file_auth_v1_auth_proto_msgTypes[0].OneofWrappers = []any{}
+	file_auth_v1_auth_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

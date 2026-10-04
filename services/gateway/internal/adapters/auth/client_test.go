@@ -168,6 +168,14 @@ func (s *stubAPI) ValidateToken(context.Context, *authv1.ValidateTokenRequest, .
 	return &authv1.ValidateTokenResponse{SubjectId: "user-1", Type: "user", Roles: []string{"user"}}, nil
 }
 
+func (s *stubAPI) LookupSubject(context.Context, *authv1.LookupSubjectRequest, ...grpc.CallOption) (*authv1.LookupSubjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return &authv1.LookupSubjectResponse{}, nil
+}
+
 type captureAPI struct {
 	authv1.UnimplementedAuthServiceServer
 

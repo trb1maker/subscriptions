@@ -85,6 +85,32 @@ func (s *Server) ValidateToken(ctx context.Context, req *authv1.ValidateTokenReq
 	}, nil
 }
 
+// LookupSubject проверяет, что пользователь или организация существуют.
+func (s *Server) LookupSubject(ctx context.Context, req *authv1.LookupSubjectRequest) (*authv1.LookupSubjectResponse, error) {
+	id, err := uuid.Parse(req.GetSubjectId())
+	if err != nil {
+		return nil, rpcError(ctx, s.log, domain.ErrInvalidSubject)
+	}
+
+	kind := domain.PrincipalType(req.GetType())
+	if !kind.Valid() {
+		return nil, rpcError(ctx, s.log, domain.ErrInvalidSubject)
+	}
+
+	organizationID, err := s.svc.LookupSubject(ctx, id, kind)
+	if err != nil {
+		return nil, rpcError(ctx, s.log, err)
+	}
+
+	resp := &authv1.LookupSubjectResponse{}
+	if organizationID != nil {
+		value := organizationID.String()
+		resp.OrganizationId = &value
+	}
+
+	return resp, nil
+}
+
 func organizationID(raw string) (*uuid.UUID, error) {
 	if raw == "" {
 		return nil, nil
@@ -115,6 +141,10 @@ func rpcError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrInvalidCredentials),
 		errors.Is(err, domain.ErrInvalidToken):
 		return fmt.Errorf("unauthenticated: %w", status.Error(codes.Unauthenticated, "unauthenticated"))
+	case errors.Is(err, domain.ErrNotFound):
+		return fmt.Errorf("not found: %w", status.Error(codes.NotFound, "not found"))
+	case errors.Is(err, domain.ErrInvalidSubject):
+		return fmt.Errorf("invalid argument: %w", status.Error(codes.InvalidArgument, "invalid argument"))
 	default:
 		log.ErrorContext(ctx, "request failed", "error", err)
 

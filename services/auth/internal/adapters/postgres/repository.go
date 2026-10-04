@@ -62,6 +62,34 @@ func (r *Repository) CreateOrganization(ctx context.Context, org domain.Organiza
 	return stored, nil
 }
 
+// UserByID возвращает пользователя по идентификатору.
+func (r *Repository) UserByID(ctx context.Context, id uuid.UUID) (domain.User, error) {
+	row, err := New(r.pool).FindUserByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.User{}, domain.ErrNotFound
+		}
+
+		return domain.User{}, fmt.Errorf("find user: %w", err)
+	}
+
+	return userFromRow(row.ID, row.Email, row.PasswordHash, row.OrganizationID, row.Role)
+}
+
+// OrganizationByID возвращает организацию по идентификатору.
+func (r *Repository) OrganizationByID(ctx context.Context, id uuid.UUID) (domain.Organization, error) {
+	row, err := New(r.pool).FindOrganization(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Organization{}, domain.ErrNotFound
+		}
+
+		return domain.Organization{}, fmt.Errorf("find organization: %w", err)
+	}
+
+	return domain.Organization{ID: row.ID, Name: row.Name}, nil
+}
+
 // UserByEmail ищет пользователя по нормализованному адресу.
 func (r *Repository) UserByEmail(ctx context.Context, email string) (domain.User, error) {
 	row, err := New(r.pool).FindUserByEmail(ctx, email)
