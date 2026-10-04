@@ -365,6 +365,99 @@ func (f *fakeSubscriptions) GetSubscription(_ context.Context, subscriptionID st
 	return f.sub, f.subErr
 }
 
+func (f *fakeSubscriptions) CheckSubscription(context.Context) (app.SubscriptionStatus, error) {
+	return app.SubscriptionStatus{}, nil
+}
+
+func TestGenerate(t *testing.T) {
+	t.Parallel()
+
+	generator := &stubGenerator{result: app.Generated{Status: "processed", Text: "emulated response", Tokens: 6}}
+	auth := &fakeAuth{identity: app.Identity{SubjectID: "user-1", Kind: "user", Roles: []string{"user"}}}
+	key := "11111111-1111-1111-1111-111111111111"
+	rec := postJSON(t, newRouterWithGenerator(t, auth, generator), "/api/v1/generate",
+		`{"prompt":"hello"}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": key},
+	)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, generator.calls)
+	require.Equal(t, "hello", generator.prompt)
+	require.Equal(t, key, generator.key)
+
+	var body struct {
+		Status string `json:"status"`
+		Text   string `json:"text"`
+		Tokens int64  `json:"tokens"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "processed", body.Status)
+	require.Equal(t, "emulated response", body.Text)
+	require.Equal(t, int64(6), body.Tokens)
+}
+
+func TestGenerateRequiresTokenAndKey(t *testing.T) {
+	t.Parallel()
+
+	generator := &stubGenerator{}
+	router := newRouterWithGenerator(t, &fakeAuth{}, generator)
+
+	missingToken := postJSON(t, router, "/api/v1/generate", `{"prompt":"hello"}`, map[string]string{"Idempotency-Key": "key"})
+	require.Equal(t, http.StatusUnauthorized, missingToken.Code)
+	require.Equal(t, "unauthenticated", errorCode(t, missingToken))
+	require.Zero(t, generator.calls)
+
+	auth := &fakeAuth{identity: app.Identity{SubjectID: "user-1", Kind: "user"}}
+	missingKey := postJSON(t, newRouterWithGenerator(t, auth, generator), "/api/v1/generate", `{"prompt":"hello"}`,
+		map[string]string{"Authorization": "Bearer good"},
+	)
+	require.Equal(t, http.StatusBadRequest, missingKey.Code)
+	require.Equal(t, "invalid_argument", errorCode(t, missingKey))
+	require.Zero(t, generator.calls)
+}
+
+func TestGenerateMapsDenial(t *testing.T) {
+	t.Parallel()
+
+	auth := &fakeAuth{identity: app.Identity{SubjectID: "user-1", Kind: "user"}}
+	inactive := &stubGenerator{err: domain.ErrSubscriptionInactive}
+	rec := postJSON(t, newRouterWithGenerator(t, auth, inactive), "/api/v1/generate", `{"prompt":"hello"}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "11111111-1111-1111-1111-111111111111"},
+	)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "subscription_inactive", errorCode(t, rec))
+
+	limited := &stubGenerator{err: domain.ErrLimitExceeded}
+	rec = postJSON(t, newRouterWithGenerator(t, auth, limited), "/api/v1/generate", `{"prompt":"hello"}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "11111111-1111-1111-1111-111111111111"},
+	)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "limit_exceeded", errorCode(t, rec))
+
+	conflict := &stubGenerator{err: domain.ErrConflict}
+	rec = postJSON(t, newRouterWithGenerator(t, auth, conflict), "/api/v1/generate", `{"prompt":"hello"}`,
+		map[string]string{"Authorization": "Bearer good", "Idempotency-Key": "11111111-1111-1111-1111-111111111111"},
+	)
+	require.Equal(t, http.StatusConflict, rec.Code)
+	require.Equal(t, "conflict", errorCode(t, rec))
+}
+
+type stubGenerator struct {
+	result app.Generated
+	err    error
+	calls  int
+	prompt string
+	key    string
+}
+
+func (s *stubGenerator) Generate(_ context.Context, prompt, key string) (app.Generated, error) {
+	s.calls++
+	s.prompt = prompt
+	s.key = key
+
+	return s.result, s.err
+}
+
 func TestCreateTariffRequiresAdminRoleAtService(t *testing.T) {
 	t.Parallel()
 
@@ -428,19 +521,28 @@ func TestCreateTariffAndSubscription(t *testing.T) {
 func newRouterWith(t *testing.T, auth app.Auth, subscriptions app.Subscriptions) http.Handler {
 	t.Helper()
 
-	log, err := logger.New(io.Discard, "error")
-	require.NoError(t, err)
-
-	return httpapi.NewRouter(log, auth, subscriptions, webhookKey)
+	return newRouterFull(t, auth, subscriptions, &stubGenerator{})
 }
 
-func newRouter(t *testing.T, auth app.Auth) http.Handler {
+func newRouterWithGenerator(t *testing.T, auth app.Auth, generator app.Generator) http.Handler {
+	t.Helper()
+
+	return newRouterFull(t, auth, &fakeSubscriptions{}, generator)
+}
+
+func newRouterFull(t *testing.T, auth app.Auth, subscriptions app.Subscriptions, generator app.Generator) http.Handler {
 	t.Helper()
 
 	log, err := logger.New(io.Discard, "error")
 	require.NoError(t, err)
 
-	return httpapi.NewRouter(log, auth, &fakeSubscriptions{}, webhookKey)
+	return httpapi.NewRouter(log, auth, subscriptions, generator, webhookKey)
+}
+
+func newRouter(t *testing.T, auth app.Auth) http.Handler {
+	t.Helper()
+
+	return newRouterFull(t, auth, &fakeSubscriptions{}, &stubGenerator{})
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string, header map[string]string) *httptest.ResponseRecorder {

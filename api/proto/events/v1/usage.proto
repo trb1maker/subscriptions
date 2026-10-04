@@ -5,7 +5,10 @@ package events.v1;
 option go_package = "github.com/trb1maker/subscriptions/api/gen/events/v1;eventsv1";
 
 // UsageEvent — одно событие учёта лимита.
+// Субъект JetStream: usage.owner.{owner_kind}.{owner_id}.
+// Заголовок Nats-Msg-Id равен event_id.
 // Повтор с тем же event_id не меняет остаток и не добавляет вторую запись.
+// Поток USAGE создаёт Usage при старте.
 message UsageEvent {
   string event_id = 1;
   // Момент в RFC3339.

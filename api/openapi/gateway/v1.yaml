@@ -246,6 +246,39 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/generate:
+    post:
+      operationId: generate
+      summary: Эмуляция генерации ответа
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/GenerateIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateRequest"
+      responses:
+        "200":
+          description: Генерация завершена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /webhooks/payments:
     post:
       operationId: acceptPaymentWebhook
@@ -273,6 +306,14 @@ components:
       schema:
         type: string
         minLength: 1
+    GenerateIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Идентификатор события генерации
+      schema:
+        type: string
+        format: uuid
     WebhookKey:
       name: X-Webhook-Key
       in: header
@@ -508,6 +549,33 @@ components:
         tariff_id:
           type: string
           format: uuid
+    GenerateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+    GenerateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - tokens
+      properties:
+        status:
+          type: string
+          enum:
+            - processed
+            - failed
+        text:
+          type: string
+          minLength: 1
+        tokens:
+          type: integer
+          minimum: 0
     Subscription:
       type: object
       additionalProperties: false
@@ -551,6 +619,8 @@ components:
             - invalid_argument
             - unauthenticated
             - forbidden
+            - subscription_inactive
+            - limit_exceeded
             - not_found
             - conflict
             - internal

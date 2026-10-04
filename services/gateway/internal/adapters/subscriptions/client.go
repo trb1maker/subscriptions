@@ -85,6 +85,16 @@ func (c *Client) ChangeSubscription(ctx context.Context, idempotencyKey, subscri
 	return c.subscription(ctx, resp)
 }
 
+// CheckSubscription сообщает, действует ли подписка вызывающего.
+func (c *Client) CheckSubscription(ctx context.Context) (app.SubscriptionStatus, error) {
+	resp, err := c.api.CheckSubscription(ctx, &subscriptionsv1.CheckSubscriptionRequest{})
+	if err != nil {
+		return app.SubscriptionStatus{}, c.failure(ctx, err)
+	}
+
+	return app.SubscriptionStatus{Active: resp.GetActive()}, nil
+}
+
 // GetSubscription возвращает подписку.
 func (c *Client) GetSubscription(ctx context.Context, subscriptionID string) (app.Subscription, error) {
 	resp, err := c.api.GetSubscription(ctx, &subscriptionsv1.GetSubscriptionRequest{SubscriptionId: subscriptionID})

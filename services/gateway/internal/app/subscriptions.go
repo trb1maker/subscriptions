@@ -25,6 +25,11 @@ type Subscription struct {
 	PeriodEnd        time.Time
 }
 
+// SubscriptionStatus — действует ли подписка вызывающего.
+type SubscriptionStatus struct {
+	Active bool
+}
+
 // Subscriptions — внутренние вызовы Subscriptions.
 type Subscriptions interface {
 	CreateTariff(ctx context.Context, idempotencyKey, name string, price int64, limit int32, kind string, base bool) (Tariff, error)
@@ -32,4 +37,5 @@ type Subscriptions interface {
 	CreateSubscription(ctx context.Context, idempotencyKey, tariffID string) (Subscription, error)
 	ChangeSubscription(ctx context.Context, idempotencyKey, subscriptionID, tariffID string) (Subscription, error)
 	GetSubscription(ctx context.Context, subscriptionID string) (Subscription, error)
+	CheckSubscription(ctx context.Context) (SubscriptionStatus, error)
 }
