@@ -51,6 +51,7 @@ type config struct {
 	RedisURL           string `env:"USAGE_REDIS_URL,required"`
 	ClickHouseDSN      string `env:"USAGE_CLICKHOUSE_DSN,required"`
 	NATSURL            string `env:"USAGE_NATS_URL,required"`
+	NATSStreamReplicas int    `env:"USAGE_NATS_STREAM_REPLICAS" envDefault:"1"`
 	AuthGRPCAddr       string `env:"AUTH_GRPC_ADDR,required"`
 	AuthGRPCServerName string `env:"AUTH_GRPC_SERVER_NAME" envDefault:"localhost"`
 	TLSCertFile        string `env:"TLS_CERT_FILE,required"`
@@ -187,7 +188,7 @@ func run() int {
 	}
 
 	if err := serve(ctx, log, httpServer, grpcServer, cfg.GRPCAddr, func(ctx context.Context) error {
-		return natsadapter.Run(ctx, jetStream, service, log)
+		return natsadapter.Run(ctx, jetStream, service, log, cfg.NATSStreamReplicas)
 	}); err != nil {
 		return 1
 	}

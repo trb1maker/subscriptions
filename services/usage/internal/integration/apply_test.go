@@ -129,7 +129,7 @@ func TestEventsUpdateLimitAndRestore(t *testing.T) {
 	t.Cleanup(consumeCancel)
 	done := make(chan error, 1)
 	go func() {
-		done <- natsadapter.Run(consumeCtx, jetStream, svc, log)
+		done <- natsadapter.Run(consumeCtx, jetStream, svc, log, 1)
 	}()
 
 	published := domain.Event{
