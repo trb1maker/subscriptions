@@ -1,0 +1,73 @@
+# stdout сервисов — JSON-файлы в deploy/logs/*.jsonl.
+# Процесс пишет только в stdout. Запуск с tee кладёт ту же строку в файл,
+# откуда Vector забирает её в usage.logs.
+#
+# data_dir смонтирован с хоста. Чекпоинт переживает пересоздание контейнера,
+# иначе read_from снова прочитает jsonl с начала и задвоит usage.logs.
+# beginning действует только для файла, которого ещё нет в чекпоинте.
+
+data_dir: /var/lib/vector
+
+sources:
+  services:
+    type: file
+    include:
+      - /var/log/subscriptions/*.jsonl
+    read_from: beginning
+
+transforms:
+  parse_logs:
+    type: remap
+    inputs:
+      - services
+    source: |
+      parsed, err = parse_json(string!(.message))
+      if err != null {
+        abort
+      }
+      raw_time = string(parsed.time) ?? ""
+      ts = now()
+      if raw_time != "" {
+        parsed_ts, ts_err = parse_timestamp(raw_time, format: "%+")
+        if ts_err == null {
+          ts = parsed_ts
+        }
+      }
+      service = string(parsed.service) ?? "unknown"
+      level = string(parsed.level) ?? ""
+      message = string(parsed.msg) ?? ""
+      trace_id = string(parsed.trace_id) ?? ""
+      span_id = string(parsed.span_id) ?? ""
+      request_id = string(parsed.request_id) ?? ""
+      if exists(parsed.time) { del(parsed.time) }
+      if exists(parsed.level) { del(parsed.level) }
+      if exists(parsed.msg) { del(parsed.msg) }
+      if exists(parsed.service) { del(parsed.service) }
+      if exists(parsed.trace_id) { del(parsed.trace_id) }
+      if exists(parsed.span_id) { del(parsed.span_id) }
+      if exists(parsed.request_id) { del(parsed.request_id) }
+      . = {
+        "timestamp": format_timestamp!(ts, format: "%Y-%m-%d %H:%M:%S%.3f"),
+        "service": service,
+        "level": level,
+        "message": message,
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "request_id": request_id,
+        "attrs": encode_json(parsed),
+      }
+
+sinks:
+  clickhouse:
+    type: clickhouse
+    inputs:
+      - parse_logs
+    endpoint: http://clickhouse:8123
+    database: usage
+    table: logs
+    skip_unknown_fields: true
+    date_time_best_effort: true
+    auth:
+      strategy: basic
+      user: ${CLICKHOUSE_USER}
+      password: ${CLICKHOUSE_PASSWORD}

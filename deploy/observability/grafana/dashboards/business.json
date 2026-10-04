@@ -1,0 +1,44 @@
+{
+  "uid": "business",
+  "title": "Business",
+  "tags": ["subscriptions"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Messages consumed",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"refId": "A", "expr": "sum by (type) (messages_consumed_total)"}]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Tokens used",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"refId": "A", "expr": "sum by (type) (tokens_used_total)"}]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Overdraft",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"refId": "A", "expr": "sum by (type) (overdraft_count)"}]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Payments",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"refId": "A", "expr": "sum by (status) (payments_total)"}]
+    }
+  ]
+}

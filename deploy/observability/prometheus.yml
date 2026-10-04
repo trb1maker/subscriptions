@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: gateway
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+  - job_name: auth
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+  - job_name: subscriptions
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+  - job_name: usage
+    static_configs:
+      - targets: ["host.docker.internal:8083"]

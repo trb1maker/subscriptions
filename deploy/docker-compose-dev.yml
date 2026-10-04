@@ -54,3 +54,54 @@ services:
       interval: 5s
       timeout: 2s
       retries: 5
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 59090:9090
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.67.0
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - 56686:16686
+      - 54317:4317
+
+  vector:
+    image: timberio/vector:0.46.1-debian
+    user: "0:0"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./observability/vector.yaml:/etc/vector/vector.yaml:ro
+      - ./logs:/var/log/subscriptions
+      - ./observability/vector-data:/var/lib/vector
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    depends_on:
+      - prometheus
+      - jaeger
+      - clickhouse
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    ports:
+      - 53000:3000
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro

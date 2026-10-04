@@ -1,0 +1,67 @@
+{
+  "uid": "technical",
+  "title": "Technical",
+  "tags": ["subscriptions"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "templating": {
+    "list": [
+      {"name": "service", "type": "textbox", "label": "service", "current": {"text": "", "value": ""}},
+      {"name": "level", "type": "textbox", "label": "level", "current": {"text": "", "value": ""}},
+      {"name": "trace_id", "type": "textbox", "label": "trace_id", "current": {"text": "", "value": ""}}
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP requests",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"refId": "A", "expr": "sum by (service, endpoint, status) (rate(http_requests_total[5m]))"}]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP duration p95",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le, service, endpoint) (rate(http_request_duration_seconds_bucket[5m])))"}]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "HTTP errors",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"refId": "A", "expr": "sum by (service, endpoint, error_type) (rate(http_request_errors_total[5m]))"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Service healthy",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"refId": "A", "expr": "service_healthy"}]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Logs",
+      "description": "Уровень slog: DEBUG, INFO, WARN, ERROR. Пустой фильтр не ограничивает выборку.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+        "editorType": "sql",
+        "format": 1,
+        "queryType": "table",
+        "rawSql": "SELECT timestamp, service, level, message, trace_id, span_id, request_id, attrs FROM usage.logs WHERE if('${service}' = '', 1, service = '${service}') AND if('${level}' = '', 1, level = '${level}') AND if('${trace_id}' = '', 1, trace_id = '${trace_id}') ORDER BY timestamp DESC LIMIT 200"
+      }]
+    }
+  ]
+}
