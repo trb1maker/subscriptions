@@ -25,6 +25,7 @@ const (
 	SubscriptionService_ChangeSubscription_FullMethodName = "/subscriptions.v1.SubscriptionService/ChangeSubscription"
 	SubscriptionService_GetSubscription_FullMethodName    = "/subscriptions.v1.SubscriptionService/GetSubscription"
 	SubscriptionService_CheckSubscription_FullMethodName  = "/subscriptions.v1.SubscriptionService/CheckSubscription"
+	SubscriptionService_ProcessPayment_FullMethodName     = "/subscriptions.v1.SubscriptionService/ProcessPayment"
 )
 
 // SubscriptionServiceClient is the client API for SubscriptionService service.
@@ -45,6 +46,10 @@ type SubscriptionServiceClient interface {
 	GetSubscription(ctx context.Context, in *GetSubscriptionRequest, opts ...grpc.CallOption) (*Subscription, error)
 	// CheckSubscription сообщает, действует ли подписка вызывающего. Отсутствие подписки — успешный ответ с active = false.
 	CheckSubscription(ctx context.Context, in *CheckSubscriptionRequest, opts ...grpc.CallOption) (*CheckSubscriptionResponse, error)
+	// ProcessPayment продлевает активную подписку по успешному платежу и публикует PaymentReceived.
+	// payment_id — ключ идемпотентности и идентификатор события. Повтор того же тела не продлевает период второй раз.
+	// Вызывающий из metadata не нужен: доступ ограничен mTLS, подписка указана в теле.
+	ProcessPayment(ctx context.Context, in *ProcessPaymentRequest, opts ...grpc.CallOption) (*Subscription, error)
 }
 
 type subscriptionServiceClient struct {
@@ -115,6 +120,16 @@ func (c *subscriptionServiceClient) CheckSubscription(ctx context.Context, in *C
 	return out, nil
 }
 
+func (c *subscriptionServiceClient) ProcessPayment(ctx context.Context, in *ProcessPaymentRequest, opts ...grpc.CallOption) (*Subscription, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Subscription)
+	err := c.cc.Invoke(ctx, SubscriptionService_ProcessPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SubscriptionServiceServer is the server API for SubscriptionService service.
 // All implementations must embed UnimplementedSubscriptionServiceServer
 // for forward compatibility.
@@ -133,6 +148,10 @@ type SubscriptionServiceServer interface {
 	GetSubscription(context.Context, *GetSubscriptionRequest) (*Subscription, error)
 	// CheckSubscription сообщает, действует ли подписка вызывающего. Отсутствие подписки — успешный ответ с active = false.
 	CheckSubscription(context.Context, *CheckSubscriptionRequest) (*CheckSubscriptionResponse, error)
+	// ProcessPayment продлевает активную подписку по успешному платежу и публикует PaymentReceived.
+	// payment_id — ключ идемпотентности и идентификатор события. Повтор того же тела не продлевает период второй раз.
+	// Вызывающий из metadata не нужен: доступ ограничен mTLS, подписка указана в теле.
+	ProcessPayment(context.Context, *ProcessPaymentRequest) (*Subscription, error)
 	mustEmbedUnimplementedSubscriptionServiceServer()
 }
 
@@ -160,6 +179,9 @@ func (UnimplementedSubscriptionServiceServer) GetSubscription(context.Context, *
 }
 func (UnimplementedSubscriptionServiceServer) CheckSubscription(context.Context, *CheckSubscriptionRequest) (*CheckSubscriptionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckSubscription not implemented")
+}
+func (UnimplementedSubscriptionServiceServer) ProcessPayment(context.Context, *ProcessPaymentRequest) (*Subscription, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProcessPayment not implemented")
 }
 func (UnimplementedSubscriptionServiceServer) mustEmbedUnimplementedSubscriptionServiceServer() {}
 func (UnimplementedSubscriptionServiceServer) testEmbeddedByValue()                             {}
@@ -290,6 +312,24 @@ func _SubscriptionService_CheckSubscription_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SubscriptionService_ProcessPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProcessPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SubscriptionServiceServer).ProcessPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SubscriptionService_ProcessPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SubscriptionServiceServer).ProcessPayment(ctx, req.(*ProcessPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SubscriptionService_ServiceDesc is the grpc.ServiceDesc for SubscriptionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -320,6 +360,10 @@ var SubscriptionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckSubscription",
 			Handler:    _SubscriptionService_CheckSubscription_Handler,
+		},
+		{
+			MethodName: "ProcessPayment",
+			Handler:    _SubscriptionService_ProcessPayment_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
