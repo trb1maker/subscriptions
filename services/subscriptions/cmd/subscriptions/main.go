@@ -23,10 +23,12 @@ import (
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/mtls"
 	natspkg "github.com/trb1maker/subscriptions/pkg/nats"
+	"github.com/trb1maker/subscriptions/pkg/observe"
 	"github.com/trb1maker/subscriptions/pkg/postgres"
 	authadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/auth"
 	grpcapi "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/grpc"
 	httpapi "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/http"
+	submetrics "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/metrics"
 	natsadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/nats"
 	subscriptionspostgres "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/postgres"
 	usageadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/usage"
@@ -38,12 +40,14 @@ const (
 	shutdownTimeout   = 10 * time.Second
 	expireTimeout     = 30 * time.Second
 	servers           = 2
+	serviceName       = "subscriptions"
 )
 
 type config struct {
 	HTTPAddr            string `env:"HTTP_ADDR"                  envDefault:":8082"`
 	GRPCAddr            string `env:"GRPC_ADDR"                  envDefault:":9092"`
 	LogLevel            string `env:"LOG_LEVEL"                  envDefault:"info"`
+	OTELEndpoint        string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:54317"`
 	DatabaseURL         string `env:"SUBSCRIPTIONS_DATABASE_URL,required"`
 	AuthGRPCAddr        string `env:"AUTH_GRPC_ADDR,required"`
 	AuthGRPCServerName  string `env:"AUTH_GRPC_SERVER_NAME"      envDefault:"localhost"`
@@ -74,7 +78,11 @@ func run() int {
 		return 1
 	}
 
-	log, err := logger.New(os.Stdout, cfg.LogLevel)
+	obs, err := observe.Start(context.Background(), observe.Config{
+		Service:  serviceName,
+		Level:    cfg.LogLevel,
+		Endpoint: cfg.OTELEndpoint,
+	})
 	if err != nil {
 		fallback, fallbackErr := logger.New(os.Stderr, "info")
 		if fallbackErr != nil {
@@ -86,6 +94,9 @@ func run() int {
 		return 1
 	}
 
+	defer obs.Shutdown(context.Background())
+	log := obs.Log
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -96,6 +107,7 @@ func run() int {
 		return 1
 	}
 	defer pool.Close()
+	obs.Watch(ctx, postgres.Check(pool))
 
 	tlsFiles := mtls.Files{CertFile: cfg.TLSCertFile, KeyFile: cfg.TLSKeyFile, CAFile: cfg.TLSCAFile}
 	clientTLS, err := mtls.ClientConfig(tlsFiles, cfg.AuthGRPCServerName)
@@ -105,7 +117,7 @@ func run() int {
 		return 1
 	}
 
-	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, clientTLS)
+	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, clientTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "auth client init failed", "error", err)
 
@@ -120,7 +132,7 @@ func run() int {
 		return 1
 	}
 
-	usageConn, err := grpcclient.Dial(ctx, cfg.UsageGRPCAddr, usageTLS)
+	usageConn, err := grpcclient.Dial(ctx, cfg.UsageGRPCAddr, usageTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "usage client init failed", "error", err)
 
@@ -149,6 +161,15 @@ func run() int {
 
 		return 1
 	}
+
+	recorded, err := submetrics.New(obs.Metrics.Registerer())
+	if err != nil {
+		log.ErrorContext(ctx, "metrics init failed", "error", err)
+
+		return 1
+	}
+
+	service.SetMetrics(recorded)
 
 	scheduler := cron.New()
 	if _, err := scheduler.AddFunc(cfg.ExpireSchedule, func() {
@@ -184,7 +205,7 @@ func run() int {
 		return 1
 	}
 
-	grpcServer, err := grpcserver.NewTLS(log, serverTLS)
+	grpcServer, err := grpcserver.NewTLS(log, serverTLS, grpcserver.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "grpc init failed", "error", err)
 
@@ -195,7 +216,7 @@ func run() int {
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(log, postgres.Check(pool)),
+		Handler:           httpapi.NewRouter(log, obs.Metrics, postgres.Check(pool)),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

@@ -20,7 +20,7 @@ import (
 func TestHealthWithoutChecks(t *testing.T) {
 	t.Parallel()
 
-	body := getHealth(t, httpapi.NewRouter(discardLog(t)))
+	body := getHealth(t, httpapi.NewRouter(discardLog(t), nil))
 	require.Equal(t, http.StatusOK, body.code)
 	require.Equal(t, "ok", body.status)
 }
@@ -28,7 +28,7 @@ func TestHealthWithoutChecks(t *testing.T) {
 func TestHealthReportsPostgres(t *testing.T) {
 	t.Parallel()
 
-	router := httpapi.NewRouter(discardLog(t), health.Check{
+	router := httpapi.NewRouter(discardLog(t), nil, health.Check{
 		Name: "postgres",
 		Fn: func(context.Context) error {
 			return errors.New("down")

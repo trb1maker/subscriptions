@@ -17,6 +17,7 @@ import (
 	"github.com/trb1maker/subscriptions/pkg/httpserver"
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/mtls"
+	"github.com/trb1maker/subscriptions/pkg/observe"
 	"github.com/trb1maker/subscriptions/pkg/postgres"
 	grpcapi "github.com/trb1maker/subscriptions/services/auth/internal/adapters/grpc"
 	httpapi "github.com/trb1maker/subscriptions/services/auth/internal/adapters/http"
@@ -30,18 +31,20 @@ const (
 	readHeaderTimeout = 5 * time.Second
 	shutdownTimeout   = 10 * time.Second
 	servers           = 2
+	serviceName       = "auth"
 )
 
 type config struct {
-	HTTPAddr    string        `env:"HTTP_ADDR"         envDefault:":8081"`
-	GRPCAddr    string        `env:"GRPC_ADDR"         envDefault:":9091"`
-	LogLevel    string        `env:"LOG_LEVEL"         envDefault:"info"`
-	DatabaseURL string        `env:"AUTH_DATABASE_URL,required"`
-	JWTSecret   string        `env:"JWT_SECRET,required"`
-	JWTTTL      time.Duration `env:"JWT_TTL"           envDefault:"1h"`
-	TLSCertFile string        `env:"TLS_CERT_FILE,required"`
-	TLSKeyFile  string        `env:"TLS_KEY_FILE,required"`
-	TLSCAFile   string        `env:"TLS_CA_FILE,required"`
+	HTTPAddr     string        `env:"HTTP_ADDR"         envDefault:":8081"`
+	GRPCAddr     string        `env:"GRPC_ADDR"         envDefault:":9091"`
+	LogLevel     string        `env:"LOG_LEVEL"         envDefault:"info"`
+	OTELEndpoint string        `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:54317"`
+	DatabaseURL  string        `env:"AUTH_DATABASE_URL,required"`
+	JWTSecret    string        `env:"JWT_SECRET,required"`
+	JWTTTL       time.Duration `env:"JWT_TTL"           envDefault:"1h"`
+	TLSCertFile  string        `env:"TLS_CERT_FILE,required"`
+	TLSKeyFile   string        `env:"TLS_KEY_FILE,required"`
+	TLSCAFile    string        `env:"TLS_CA_FILE,required"`
 }
 
 func main() {
@@ -61,7 +64,11 @@ func run() int {
 		return 1
 	}
 
-	log, err := logger.New(os.Stdout, cfg.LogLevel)
+	obs, err := observe.Start(context.Background(), observe.Config{
+		Service:  serviceName,
+		Level:    cfg.LogLevel,
+		Endpoint: cfg.OTELEndpoint,
+	})
 	if err != nil {
 		fallback, fallbackErr := logger.New(os.Stderr, "info")
 		if fallbackErr != nil {
@@ -73,6 +80,9 @@ func run() int {
 		return 1
 	}
 
+	defer obs.Shutdown(context.Background())
+	log := obs.Log
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -83,6 +93,7 @@ func run() int {
 		return 1
 	}
 	defer pool.Close()
+	obs.Watch(ctx, postgres.Check(pool))
 
 	issuer, err := jwtissuer.NewIssuer(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
@@ -109,7 +120,7 @@ func run() int {
 		return 1
 	}
 
-	grpcServer, err := grpcserver.NewTLS(log, tlsCfg)
+	grpcServer, err := grpcserver.NewTLS(log, tlsCfg, grpcserver.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "grpc init failed", "error", err)
 
@@ -120,7 +131,7 @@ func run() int {
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(log, postgres.Check(pool)),
+		Handler:           httpapi.NewRouter(log, obs.Metrics, postgres.Check(pool)),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

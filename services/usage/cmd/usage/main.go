@@ -24,11 +24,13 @@ import (
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/mtls"
 	natspkg "github.com/trb1maker/subscriptions/pkg/nats"
+	"github.com/trb1maker/subscriptions/pkg/observe"
 	redispkg "github.com/trb1maker/subscriptions/pkg/redis"
 	authadapter "github.com/trb1maker/subscriptions/services/usage/internal/adapters/auth"
 	clickstore "github.com/trb1maker/subscriptions/services/usage/internal/adapters/clickhouse"
 	grpcapi "github.com/trb1maker/subscriptions/services/usage/internal/adapters/grpc"
 	httpapi "github.com/trb1maker/subscriptions/services/usage/internal/adapters/http"
+	usagemetrics "github.com/trb1maker/subscriptions/services/usage/internal/adapters/metrics"
 	natsadapter "github.com/trb1maker/subscriptions/services/usage/internal/adapters/nats"
 	redisstore "github.com/trb1maker/subscriptions/services/usage/internal/adapters/redis"
 	"github.com/trb1maker/subscriptions/services/usage/internal/app"
@@ -38,12 +40,14 @@ const (
 	readHeaderTimeout = 5 * time.Second
 	shutdownTimeout   = 10 * time.Second
 	workers           = 3
+	serviceName       = "usage"
 )
 
 type config struct {
 	HTTPAddr           string `env:"HTTP_ADDR"             envDefault:":8083"`
 	GRPCAddr           string `env:"GRPC_ADDR"             envDefault:":9093"`
 	LogLevel           string `env:"LOG_LEVEL"             envDefault:"info"`
+	OTELEndpoint       string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:54317"`
 	RedisURL           string `env:"USAGE_REDIS_URL,required"`
 	ClickHouseDSN      string `env:"USAGE_CLICKHOUSE_DSN,required"`
 	NATSURL            string `env:"USAGE_NATS_URL,required"`
@@ -71,7 +75,11 @@ func run() int {
 		return 1
 	}
 
-	log, err := logger.New(os.Stdout, cfg.LogLevel)
+	obs, err := observe.Start(context.Background(), observe.Config{
+		Service:  serviceName,
+		Level:    cfg.LogLevel,
+		Endpoint: cfg.OTELEndpoint,
+	})
 	if err != nil {
 		fallback, fallbackErr := logger.New(os.Stderr, "info")
 		if fallbackErr != nil {
@@ -82,6 +90,9 @@ func run() int {
 
 		return 1
 	}
+
+	defer obs.Shutdown(context.Background())
+	log := obs.Log
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -101,6 +112,7 @@ func run() int {
 		return 1
 	}
 	defer closeClickHouse(ctx, log, clickDB)
+	obs.Watch(ctx, redispkg.Check(redisClient), clickhouse.Check(clickDB))
 
 	natsConn, jetStream, err := natspkg.Connect(ctx, cfg.NATSURL)
 	if err != nil {
@@ -118,7 +130,7 @@ func run() int {
 		return 1
 	}
 
-	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, clientTLS)
+	authConn, err := grpcclient.Dial(ctx, cfg.AuthGRPCAddr, clientTLS, grpcclient.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "auth client init failed", "error", err)
 
@@ -137,6 +149,15 @@ func run() int {
 		return 1
 	}
 
+	recorded, err := usagemetrics.New(obs.Metrics.Registerer())
+	if err != nil {
+		log.ErrorContext(ctx, "metrics init failed", "error", err)
+
+		return 1
+	}
+
+	service.SetMetrics(recorded)
+
 	if err := service.Restore(ctx); err != nil {
 		log.ErrorContext(ctx, "restore limits failed", "error", err)
 
@@ -150,7 +171,7 @@ func run() int {
 		return 1
 	}
 
-	grpcServer, err := grpcserver.NewTLS(log, serverTLS)
+	grpcServer, err := grpcserver.NewTLS(log, serverTLS, grpcserver.WithMetrics(obs.Metrics))
 	if err != nil {
 		log.ErrorContext(ctx, "grpc init failed", "error", err)
 
@@ -161,7 +182,7 @@ func run() int {
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(log, redispkg.Check(redisClient), clickhouse.Check(clickDB)),
+		Handler:           httpapi.NewRouter(log, obs.Metrics, redispkg.Check(redisClient), clickhouse.Check(clickDB)),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

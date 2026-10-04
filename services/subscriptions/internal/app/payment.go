@@ -57,26 +57,26 @@ func (s *Service) ProcessPayment(
 	}
 
 	if !errors.Is(err, domain.ErrNotFound) {
-		return domain.Subscription{}, fmt.Errorf("replay payment: %w", err)
+		return domain.Subscription{}, s.reject(fmt.Errorf("replay payment: %w", err))
 	}
 
 	current, err := s.store.Subscription(ctx, subscriptionID)
 	if err != nil {
-		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
+		return domain.Subscription{}, s.reject(fmt.Errorf("find subscription: %w", err))
 	}
 
 	tariff, err := s.store.Tariff(ctx, current.TariffID)
 	if err != nil {
-		return domain.Subscription{}, fmt.Errorf("find tariff: %w", err)
+		return domain.Subscription{}, s.reject(fmt.Errorf("find tariff: %w", err))
 	}
 
 	if _, err := domain.PlanPayment(current, tariff, 0, amountMinor, s.clock(), paymentID); err != nil {
-		return domain.Subscription{}, err
+		return domain.Subscription{}, s.reject(err)
 	}
 
 	owner, ok := current.Owner()
 	if !ok {
-		return domain.Subscription{}, domain.ErrInvalidArgument
+		return domain.Subscription{}, s.reject(domain.ErrInvalidArgument)
 	}
 
 	remaining, err := s.balances.Remaining(ctx, owner)
@@ -86,14 +86,33 @@ func (s *Service) ProcessPayment(
 
 	renewed, err := s.store.RenewSubscription(ctx, subscriptionID, remaining, amountMinor, paymentID, s.clock(), key, digest)
 	if err != nil {
-		return domain.Subscription{}, fmt.Errorf("renew subscription: %w", err)
+		return domain.Subscription{}, s.reject(fmt.Errorf("renew subscription: %w", err))
 	}
+
+	s.recorded.Payment(PaymentStatusReceived)
 
 	if err := s.publishPayment(ctx, renewed, paymentUUID, occurredAt, amountMinor); err != nil {
 		return domain.Subscription{}, err
 	}
 
 	return renewed, nil
+}
+
+func (s *Service) reject(err error) error {
+	if paymentRejected(err) {
+		s.recorded.Payment(PaymentStatusFailed)
+	}
+
+	return err
+}
+
+func paymentRejected(err error) bool {
+	return errors.Is(err, domain.ErrSubscriptionInactive) ||
+		errors.Is(err, domain.ErrNotFound) ||
+		errors.Is(err, domain.ErrIdempotencyConflict) ||
+		errors.Is(err, domain.ErrInvalidArgument) ||
+		errors.Is(err, domain.ErrTariffType) ||
+		errors.Is(err, domain.ErrInvalidPrice)
 }
 
 func (s *Service) publishPayment(ctx context.Context, sub domain.Subscription, eventID uuid.UUID, occurredAt time.Time, amountMinor int64) error {

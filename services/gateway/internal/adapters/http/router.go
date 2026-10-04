@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/trb1maker/subscriptions/pkg/health"
+	"github.com/trb1maker/subscriptions/pkg/metrics"
 	"github.com/trb1maker/subscriptions/pkg/middleware"
 	"github.com/trb1maker/subscriptions/services/gateway/internal/app"
 )
@@ -26,6 +27,7 @@ func NewRouter(
 	subscriptions app.Subscriptions,
 	generator app.Generator,
 	webhookKey string,
+	met *metrics.Metrics,
 ) http.Handler {
 	h := handler{
 		log:           log,
@@ -36,7 +38,16 @@ func NewRouter(
 	}
 
 	router := chi.NewRouter()
-	middleware.Use(router, log)
+	opts := []middleware.Option{middleware.WithTracing()}
+	if met != nil {
+		opts = append(opts, middleware.WithMetrics(met))
+	}
+
+	middleware.Use(router, log, opts...)
+	if met != nil {
+		router.Method(http.MethodGet, "/metrics", met.Handler())
+	}
+
 	router.Method(http.MethodGet, "/health", health.Handler(log))
 	router.Method(http.MethodPost, "/webhooks/payments", http.HandlerFunc(h.paymentWebhook))
 	router.Route("/api/v1", func(api chi.Router) {

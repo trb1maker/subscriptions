@@ -49,6 +49,22 @@ type Payments interface {
 	PublishPaymentReceived(ctx context.Context, event PaymentNotice) error
 }
 
+const (
+	// PaymentStatusReceived — платёж проведён первый раз.
+	PaymentStatusReceived = "received"
+	// PaymentStatusFailed — разобранный платёж отклонён.
+	PaymentStatusFailed = "failed"
+)
+
+// PaymentMetrics считает платежи. Повтор того же payment_id не увеличивает received.
+type PaymentMetrics interface {
+	Payment(status string)
+}
+
+type nopPaymentMetrics struct{}
+
+func (nopPaymentMetrics) Payment(string) {}
+
 // Directory проверяет в Auth, что владелец существует.
 type Directory interface {
 	Lookup(ctx context.Context, id uuid.UUID, kind domain.OwnerKind) (domain.Subject, error)
@@ -66,6 +82,7 @@ type Service struct {
 	directory Directory
 	balances  Balances
 	payments  Payments
+	recorded  PaymentMetrics
 	pepper    []byte
 	now       func() time.Time
 }
@@ -97,9 +114,17 @@ func New(store Store, directory Directory, balances Balances, payments Payments,
 		directory: directory,
 		balances:  balances,
 		payments:  payments,
+		recorded:  nopPaymentMetrics{},
 		pepper:    append([]byte(nil), pepper...),
 		now:       now,
 	}, nil
+}
+
+// SetMetrics подключает счётчик платежей. nil оставляет пустую реализацию.
+func (s *Service) SetMetrics(m PaymentMetrics) {
+	if m != nil {
+		s.recorded = m
+	}
 }
 
 func (s *Service) clock() time.Time {

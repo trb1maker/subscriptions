@@ -585,7 +585,7 @@ func newRouterFull(t *testing.T, auth app.Auth, subscriptions app.Subscriptions,
 	log, err := logger.New(io.Discard, "error")
 	require.NoError(t, err)
 
-	return httpapi.NewRouter(log, auth, subscriptions, generator, webhookKey)
+	return httpapi.NewRouter(log, auth, subscriptions, generator, webhookKey, nil)
 }
 
 func newRouter(t *testing.T, auth app.Auth) http.Handler {
