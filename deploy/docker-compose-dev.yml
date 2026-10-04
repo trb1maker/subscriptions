@@ -57,8 +57,6 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.4.1
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - 59090:9090
     volumes:
@@ -83,8 +81,8 @@ services:
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     volumes:
       - ./observability/vector.yaml:/etc/vector/vector.yaml:ro
-      - ./logs:/var/log/subscriptions
       - ./observability/vector-data:/var/lib/vector
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   grafana:
     image: grafana/grafana:11.6.1
@@ -105,3 +103,192 @@ services:
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  migrate-auth:
+    profiles: ["demo"]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: ["auth", "up"]
+    environment:
+      AUTH_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/auth?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  migrate-subscriptions:
+    profiles: ["demo"]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: ["subscriptions", "up"]
+    environment:
+      SUBSCRIPTIONS_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/subscriptions?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  migrate-usage:
+    profiles: ["demo"]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: ["usage", "up"]
+    environment:
+      USAGE_CLICKHOUSE_DSN: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:9000/default
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: "no"
+
+  auth:
+    profiles: ["demo"]
+    container_name: subscriptions-auth
+    image: subscriptions-auth
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/auth/cmd/auth
+    environment:
+      HTTP_ADDR: ":8081"
+      GRPC_ADDR: ":9091"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      AUTH_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/auth?sslmode=disable
+      JWT_SECRET: dev-secret
+      JWT_TTL: 12h
+      TLS_CERT_FILE: /certs/auth.crt
+      TLS_KEY_FILE: /certs/auth.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      migrate-auth:
+        condition: service_completed_successfully
+
+  subscriptions:
+    profiles: ["demo"]
+    container_name: subscriptions-subscriptions
+    image: subscriptions-subscriptions
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/subscriptions/cmd/subscriptions
+    environment:
+      HTTP_ADDR: ":8082"
+      GRPC_ADDR: ":9092"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      SUBSCRIPTIONS_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/subscriptions?sslmode=disable
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      USAGE_GRPC_ADDR: usage:9093
+      USAGE_GRPC_SERVER_NAME: usage
+      SUBSCRIPTIONS_NATS_URL: nats://nats:4222
+      SUBSCRIPTIONS_REQUEST_PEPPER: pepper
+      TLS_CERT_FILE: /certs/subscriptions.crt
+      TLS_KEY_FILE: /certs/subscriptions.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      migrate-subscriptions:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+      usage:
+        condition: service_started
+      nats:
+        condition: service_healthy
+
+  usage:
+    profiles: ["demo"]
+    container_name: subscriptions-usage
+    image: subscriptions-usage
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/usage/cmd/usage
+    environment:
+      HTTP_ADDR: ":8083"
+      GRPC_ADDR: ":9093"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      USAGE_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      USAGE_CLICKHOUSE_DSN: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:9000/default
+      USAGE_NATS_URL: nats://nats:4222
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      TLS_CERT_FILE: /certs/usage.crt
+      TLS_KEY_FILE: /certs/usage.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      migrate-usage:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  gateway:
+    profiles: ["demo"]
+    container_name: subscriptions-gateway
+    image: subscriptions-gateway
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/gateway/cmd/gateway
+    environment:
+      HTTP_ADDR: ":8080"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      SUBSCRIPTIONS_GRPC_ADDR: subscriptions:9092
+      SUBSCRIPTIONS_GRPC_SERVER_NAME: subscriptions
+      USAGE_GRPC_ADDR: usage:9093
+      USAGE_GRPC_SERVER_NAME: usage
+      GATEWAY_NATS_URL: nats://nats:4222
+      WEBHOOK_KEY: webhook-secret
+      GENERATE_DELAY_MIN: 50ms
+      GENERATE_DELAY_MAX: 200ms
+      GENERATE_FAILURE_PERCENT: "5"
+      TLS_CERT_FILE: /certs/gateway.crt
+      TLS_KEY_FILE: /certs/gateway.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      auth:
+        condition: service_started
+      subscriptions:
+        condition: service_started
+      usage:
+        condition: service_started
+      nats:
+        condition: service_healthy
