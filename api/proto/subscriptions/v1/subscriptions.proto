@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package subscriptions.v1;
+
+option go_package = "github.com/trb1maker/subscriptions/api/gen/subscriptions/v1;subscriptionsv1";
+
+// SubscriptionService хранит тарифы и подписки и отвечает, действует ли подписка.
+service SubscriptionService {
+  // CreateTariff создаёт тариф. Повтор с тем же ключом идемпотентности не создаёт второй тариф.
+  rpc CreateTariff(CreateTariffRequest) returns (Tariff);
+  // ListTariffs возвращает каталог тарифов.
+  rpc ListTariffs(ListTariffsRequest) returns (ListTariffsResponse);
+  // CreateSubscription создаёт подписку владельца из metadata вызывающего.
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (Subscription);
+  // ChangeSubscription меняет тариф подписки. Повтор ключа не применяет смену второй раз.
+  rpc ChangeSubscription(ChangeSubscriptionRequest) returns (Subscription);
+  // GetSubscription возвращает подписку владельца.
+  rpc GetSubscription(GetSubscriptionRequest) returns (Subscription);
+  // CheckSubscription сообщает, действует ли подписка вызывающего. Отсутствие подписки — успешный ответ с active = false.
+  rpc CheckSubscription(CheckSubscriptionRequest) returns (CheckSubscriptionResponse);
+}
+
+message CreateTariffRequest {
+  // Ключ уникален среди всех команд Subscriptions.
+  string idempotency_key = 1;
+  string name = 2;
+  int64 monthly_price_minor = 3;
+  int32 message_limit = 4;
+  // b2c или b2b.
+  string type = 5;
+  bool is_base_tariff = 6;
+}
+
+message Tariff {
+  string id = 1;
+  string name = 2;
+  int64 monthly_price_minor = 3;
+  int32 message_limit = 4;
+  string type = 5;
+  bool is_base_tariff = 6;
+}
+
+message ListTariffsRequest {}
+
+message ListTariffsResponse {
+  repeated Tariff tariffs = 1;
+}
+
+message CreateSubscriptionRequest {
+  string idempotency_key = 1;
+  string tariff_id = 2;
+}
+
+message ChangeSubscriptionRequest {
+  string idempotency_key = 1;
+  string subscription_id = 2;
+  string tariff_id = 3;
+}
+
+message GetSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message Subscription {
+  string id = 1;
+  string tariff_id = 2;
+  // active, suspended или expired.
+  string status = 3;
+  int64 message_allowance = 4;
+  // Момент в RFC3339.
+  string current_period_start = 5;
+  string current_period_end = 6;
+}
+
+message CheckSubscriptionRequest {}
+
+message CheckSubscriptionResponse {
+  bool active = 1;
+  string subscription_id = 2;
+  string tariff_id = 3;
+  int64 message_limit = 4;
+  string current_period_end = 5;
+}

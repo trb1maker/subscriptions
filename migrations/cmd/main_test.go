@@ -13,6 +13,8 @@ func TestRunUsage(t *testing.T) {
 
 func TestRunRequiresDatabaseURL(t *testing.T) {
 	t.Setenv("AUTH_DATABASE_URL", "")
-
 	require.Equal(t, 1, run([]string{"auth", "up"}))
+
+	t.Setenv("SUBSCRIPTIONS_DATABASE_URL", "")
+	require.Equal(t, 1, run([]string{"subscriptions", "up"}))
 }

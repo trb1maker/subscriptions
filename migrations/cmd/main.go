@@ -8,6 +8,7 @@ import (
 	"os"
 
 	authmigrations "github.com/trb1maker/subscriptions/migrations/auth"
+	subscriptionsmigrations "github.com/trb1maker/subscriptions/migrations/subscriptions"
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/migrate"
 )
@@ -95,6 +96,7 @@ func knownCommand(command string) bool {
 
 func services() map[string]migrationSet {
 	return map[string]migrationSet{
-		"auth": {files: authmigrations.FS, env: "AUTH_DATABASE_URL"},
+		"auth":          {files: authmigrations.FS, env: "AUTH_DATABASE_URL"},
+		"subscriptions": {files: subscriptionsmigrations.FS, env: "SUBSCRIPTIONS_DATABASE_URL"},
 	}
 }

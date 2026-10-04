@@ -1,0 +1,65 @@
+package auth_test
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+	"uuid"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	authv1 "github.com/trb1maker/subscriptions/api/gen/auth/v1"
+	"github.com/trb1maker/subscriptions/pkg/logger"
+	"github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/auth"
+	"github.com/trb1maker/subscriptions/services/subscriptions/internal/domain"
+)
+
+func TestLookupMapsNotFound(t *testing.T) {
+	t.Parallel()
+
+	client := auth.NewClient(stubAPI{err: status.Error(codes.NotFound, "not found")}, discardLog(t))
+	_, err := client.Lookup(context.Background(), uuid.New(), domain.OwnerUser)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestLookupReturnsOrganization(t *testing.T) {
+	t.Parallel()
+
+	orgID := uuid.New().String()
+	client := auth.NewClient(stubAPI{orgID: orgID}, discardLog(t))
+	subject, err := client.Lookup(context.Background(), uuid.New(), domain.OwnerUser)
+	require.NoError(t, err)
+	require.NotNil(t, subject.OrganizationID)
+	require.Equal(t, orgID, subject.OrganizationID.String())
+}
+
+type stubAPI struct {
+	orgID string
+	err   error
+}
+
+func (s stubAPI) LookupSubject(context.Context, *authv1.LookupSubjectRequest, ...grpc.CallOption) (*authv1.LookupSubjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	resp := &authv1.LookupSubjectResponse{}
+	if s.orgID != "" {
+		resp.OrganizationId = &s.orgID
+	}
+
+	return resp, nil
+}
+
+func discardLog(t *testing.T) *slog.Logger {
+	t.Helper()
+
+	log, err := logger.New(io.Discard, "error")
+	require.NoError(t, err)
+
+	return log
+}
