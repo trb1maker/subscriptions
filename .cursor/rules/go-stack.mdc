@@ -12,7 +12,8 @@ alwaysApply: false
 - gRPC: `google.golang.org/grpc`
 - JWT: `github.com/golang-jwt/jwt/v5`
 - PostgreSQL: `github.com/jackc/pgx/v5`, запросы через sqlc
-- Миграции: `github.com/pressly/goose/v3`
+- Миграции: `github.com/pressly/goose/v3` через `pkg/migrate`
+- Пароли: `golang.org/x/crypto/bcrypt`
 - Redis: `github.com/redis/go-redis/v9`
 - ClickHouse: `github.com/ClickHouse/clickhouse-go/v2`
 - NATS: `github.com/nats-io/nats.go` (JetStream)

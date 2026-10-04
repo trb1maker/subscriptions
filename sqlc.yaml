@@ -1,0 +1,21 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations/auth
+    queries: services/auth/internal/adapters/postgres/query.sql
+    gen:
+      go:
+        package: postgres
+        out: services/auth/internal/adapters/postgres
+        sql_package: pgx/v5
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: uuid
+              type: UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: uuid
+              type: UUID
+              pointer: true

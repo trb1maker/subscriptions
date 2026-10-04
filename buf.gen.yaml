@@ -1,0 +1,16 @@
+version: v2
+plugins:
+  - local:
+      - go
+      - tool
+      - -modfile=tools/protobuf.mod
+      - protoc-gen-go
+    out: api/gen
+    opt: paths=source_relative
+  - local:
+      - go
+      - tool
+      - -modfile=tools/protobuf.mod
+      - protoc-gen-go-grpc
+    out: api/gen
+    opt: paths=source_relative
