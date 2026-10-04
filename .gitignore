@@ -8,3 +8,4 @@ deploy/certs/*.srl
 deploy/certs/*.pem
 deploy/certs/*.ext
 deploy/observability/vector-data/
+deploy/observability/vector-data-ha/
