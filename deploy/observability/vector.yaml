@@ -1,25 +1,25 @@
-# stdout сервисов — JSON-файлы в deploy/logs/*.jsonl.
-# Процесс пишет только в stdout. Запуск с tee кладёт ту же строку в файл,
-# откуда Vector забирает её в usage.logs.
+# stdout контейнеров демо-стенда — JSON в журнале Docker.
+# Vector читает его через сокет и пишет в usage.logs.
 #
 # data_dir смонтирован с хоста. Чекпоинт переживает пересоздание контейнера,
-# иначе read_from снова прочитает jsonl с начала и задвоит usage.logs.
-# beginning действует только для файла, которого ещё нет в чекпоинте.
+# иначе docker_logs снова прочитает журнал с начала и задвоит usage.logs.
 
 data_dir: /var/lib/vector
 
 sources:
-  services:
-    type: file
-    include:
-      - /var/log/subscriptions/*.jsonl
-    read_from: beginning
+  containers:
+    type: docker_logs
+    include_containers:
+      - subscriptions-auth
+      - subscriptions-gateway
+      - subscriptions-subscriptions
+      - subscriptions-usage
 
 transforms:
   parse_logs:
     type: remap
     inputs:
-      - services
+      - containers
     source: |
       parsed, err = parse_json(string!(.message))
       if err != null {

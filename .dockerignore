@@ -1,2 +1,3 @@
-.git/
-bin/
+.git
+deploy/observability/vector-data
+**/*_test.go

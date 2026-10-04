@@ -9,6 +9,18 @@ vars:
   DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
 
 tasks:
+  generate:
+    desc: Сгенерировать контракты и запросы
+    cmds:
+      - "{{.BUF}} generate"
+      - "{{.SQLC}} generate"
+    silent: true
+  
+  certs:
+    desc: Сгенерировать сертификаты mTLS для локального запуска
+    cmd: sh deploy/certs/generate.sh
+    silent: true
+  
   fmt:
     desc: Форматирование кода
     cmd: "{{.GOLANGCILINT}} fmt ./..."
@@ -24,6 +36,11 @@ tasks:
     cmd: go test ./...
     silent: true
 
+  test:integration:
+    desc: Запуск интеграционных тестов
+    cmd: go test -tags=integration -timeout 15m ./...
+    silent: true
+  
   check:
     desc: Набор проверок перед коммитом
     deps: [fmt, lint, test:unit]
@@ -37,57 +54,24 @@ tasks:
       - task test:unit
     silent: true
 
-  generate:
-    desc: Сгенерировать контракты и запросы
+  test:load:
+    desc: Нагрузочный тест на testcontainers
+    cmd: go test -tags=load -count=1 -timeout 15m ./tests/load
+    silent: true
+
+  demo:up:
+    desc: Собрать сервисы и поднять стенд для демонстрации
+    dotenv: [.env]
     cmds:
-      - "{{.BUF}} generate"
-      - "{{.SQLC}} generate"
+      - sh -c 'test -f deploy/certs/subscriptions.crt || { echo "Сначала task certs"; exit 1; }'
+      - docker compose {{.DEV_COMPOSE}} --profile demo up -d --build
+
+  demo:
+    desc: Сценарий нагрузки на уже поднятый стенд
+    cmd: go run ./tests/demo {{.CLI_ARGS}}
+
+  demo:down:
+    desc: Остановить стенд демонстрации
+    dotenv: [.env]
+    cmd: docker compose {{.DEV_COMPOSE}} --profile demo down -v
     silent: true
-
-  migrate:
-    desc: Миграции сервиса
-    dotenv: [.env]
-    cmd: go run ./migrations/cmd {{.CLI_ARGS}}
-    silent: true
-
-  certs:
-    desc: Сертификаты mTLS для локального запуска
-    cmd: sh deploy/certs/generate.sh
-    silent: true
-
-  test:integration:
-    desc: Запуск интеграционных тестов
-    cmd: go test -tags=integration ./...
-    silent: true
-
-  dev:start:
-    desc: Развернуть инфраструктуру для разработки
-    dotenv: [.env]
-    cmd: docker compose {{.DEV_COMPOSE}} up -d
-    silent: true
-
-  dev:stop:
-    desc: Остановить инфраструктуру для разработки
-    dotenv: [.env]
-    cmd: docker compose {{.DEV_COMPOSE}} down -v
-    silent: true
-
-  run:gateway:
-    desc: Gateway, stdout дополнительно в deploy/logs/gateway.jsonl
-    dotenv: [.env]
-    cmd: mkdir -p deploy/logs && go run ./services/gateway/cmd/gateway 2>&1 | tee -a deploy/logs/gateway.jsonl
-
-  run:auth:
-    desc: Auth, stdout дополнительно в deploy/logs/auth.jsonl
-    dotenv: [.env]
-    cmd: mkdir -p deploy/logs && go run ./services/auth/cmd/auth 2>&1 | tee -a deploy/logs/auth.jsonl
-
-  run:subscriptions:
-    desc: Subscriptions, stdout дополнительно в deploy/logs/subscriptions.jsonl
-    dotenv: [.env]
-    cmd: mkdir -p deploy/logs && go run ./services/subscriptions/cmd/subscriptions 2>&1 | tee -a deploy/logs/subscriptions.jsonl
-
-  run:usage:
-    desc: Usage, stdout дополнительно в deploy/logs/usage.jsonl
-    dotenv: [.env]
-    cmd: mkdir -p deploy/logs && go run ./services/usage/cmd/usage 2>&1 | tee -a deploy/logs/usage.jsonl
