@@ -164,6 +164,26 @@ func (s *Server) CheckSubscription(ctx context.Context, _ *subscriptionsv1.Check
 	return resp, nil
 }
 
+// ProcessPayment продлевает подписку по платежу. Вызывающий из metadata не требуется.
+func (s *Server) ProcessPayment(ctx context.Context, req *subscriptionsv1.ProcessPaymentRequest) (*subscriptionsv1.Subscription, error) {
+	subscriptionID, err := parseID(req.GetSubscriptionId(), domain.ErrInvalidSubscriptionID)
+	if err != nil {
+		return nil, rpcError(ctx, s.log, err)
+	}
+
+	occurredAt, err := time.Parse(time.RFC3339Nano, req.GetOccurredAt())
+	if err != nil {
+		return nil, rpcError(ctx, s.log, domain.ErrInvalidArgument)
+	}
+
+	sub, err := s.svc.ProcessPayment(ctx, subscriptionID, req.GetPaymentId(), req.GetAmountMinor(), occurredAt)
+	if err != nil {
+		return nil, rpcError(ctx, s.log, err)
+	}
+
+	return subscriptionMessage(sub), nil
+}
+
 func tariffMessage(tariff domain.Tariff) *subscriptionsv1.Tariff {
 	return &subscriptionsv1.Tariff{
 		Id:                tariff.ID.String(),
@@ -239,10 +259,15 @@ func rpcError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrOrganizationMember),
 		errors.Is(err, domain.ErrActiveSubscription),
 		errors.Is(err, domain.ErrBaseTariffExists),
+		errors.Is(err, domain.ErrSubscriptionInactive),
 		errors.Is(err, domain.ErrIdempotencyConflict):
 		return fmt.Errorf("conflict: %w", status.Error(codes.FailedPrecondition, "conflict"))
 	case errors.Is(err, domain.ErrUnavailable):
 		return fmt.Errorf("unavailable: %w", status.Error(codes.Unavailable, "unavailable"))
+	case errors.Is(err, domain.ErrInternal):
+		log.ErrorContext(ctx, "request failed", "error", err)
+
+		return fmt.Errorf("internal: %w", status.Error(codes.Internal, "internal"))
 	default:
 		log.ErrorContext(ctx, "request failed", "error", err)
 

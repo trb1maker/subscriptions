@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/domain"
@@ -19,6 +20,7 @@ const (
 	operationCreateTariff         = "create_tariff"
 	operationCreateSubscription   = "create_subscription"
 	operationChangeSubscription   = "change_subscription"
+	operationReceivePayment       = "receive_payment"
 	constraintIdempotencyKeysPkey = "idempotency_keys_pkey"
 	constraintOneBase             = "tariffs_one_base"
 	constraintOneActiveUser       = "subscriptions_one_active_user"
@@ -148,7 +150,7 @@ func (r *Repository) Subscription(ctx context.Context, id uuid.UUID) (domain.Sub
 		return domain.Subscription{}, fmt.Errorf("find subscription: %w", err)
 	}
 
-	return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd)
+	return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd, paymentID(row.PaymentID))
 }
 
 // ActiveByOwner возвращает активную подписку пользователя или организации.
@@ -161,14 +163,14 @@ func (r *Repository) ActiveByOwner(ctx context.Context, id uuid.UUID, kind domai
 			return missingSubscription(err)
 		}
 
-		return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd)
+		return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd, paymentID(row.PaymentID))
 	case domain.OwnerOrganization:
 		row, err := queries.FindActiveSubscriptionByOrganization(ctx, &id)
 		if err != nil {
 			return missingSubscription(err)
 		}
 
-		return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd)
+		return subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd, paymentID(row.PaymentID))
 	default:
 		return domain.Subscription{}, domain.ErrUnauthenticated
 	}
@@ -185,6 +187,46 @@ func (r *Repository) ChangeSubscription(
 	stored, err := r.updateSubscription(ctx, id, next, key, requestHash)
 	if errors.Is(err, errIdempotencyRace) {
 		return r.ReplaySubscription(ctx, key, requestHash)
+	}
+
+	if err != nil {
+		return domain.Subscription{}, err
+	}
+
+	return stored, nil
+}
+
+// ReplayPayment возвращает подписку, уже продлённую этим платежом.
+func (r *Repository) ReplayPayment(ctx context.Context, key string, requestHash []byte) (domain.Subscription, error) {
+	row, err := New(r.pool).FindIdempotency(ctx, key)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Subscription{}, domain.ErrNotFound
+		}
+
+		return domain.Subscription{}, fmt.Errorf("find idempotency key: %w", err)
+	}
+
+	if row.Operation != operationReceivePayment || subtle.ConstantTimeCompare(row.RequestHash, requestHash) != 1 {
+		return domain.Subscription{}, domain.ErrIdempotencyConflict
+	}
+
+	return r.Subscription(ctx, row.ResourceID)
+}
+
+// RenewSubscription продлевает подписку и записывает платёж. Повтор ключа возвращает уже сохранённую строку.
+func (r *Repository) RenewSubscription(
+	ctx context.Context,
+	id uuid.UUID,
+	remaining, amountMinor int64,
+	payment string,
+	now time.Time,
+	key string,
+	requestHash []byte,
+) (domain.Subscription, error) {
+	stored, err := r.renewSubscription(ctx, id, remaining, amountMinor, payment, now, key, requestHash)
+	if errors.Is(err, errIdempotencyRace) {
+		return r.ReplayPayment(ctx, key, requestHash)
 	}
 
 	if err != nil {
@@ -218,7 +260,7 @@ func (r *Repository) CloseExpired(ctx context.Context, now time.Time) (domain.Ex
 
 	var report domain.ExpiryReport
 	for _, row := range due {
-		sub, err := subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd)
+		sub, err := subscriptionFrom(row.ID, row.UserID, row.OrganizationID, row.TariffID, row.Status, row.MessageAllowance, row.CurrentPeriodStart, row.CurrentPeriodEnd, paymentID(row.PaymentID))
 		if err != nil {
 			return domain.ExpiryReport{}, err
 		}
@@ -398,6 +440,7 @@ func (r *Repository) updateSubscription(
 		current.MessageAllowance,
 		current.CurrentPeriodStart,
 		current.CurrentPeriodEnd,
+		paymentID(current.PaymentID),
 	)
 	if err != nil {
 		return domain.Subscription{}, err
@@ -430,6 +473,130 @@ func (r *Repository) updateSubscription(
 	}
 
 	return sub, nil
+}
+
+func (r *Repository) renewSubscription(
+	ctx context.Context,
+	id uuid.UUID,
+	remaining, amountMinor int64,
+	payment string,
+	now time.Time,
+	key string,
+	requestHash []byte,
+) (domain.Subscription, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Subscription{}, fmt.Errorf("begin renew subscription: %w", err)
+	}
+
+	defer func() {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+	}()
+
+	queries := New(tx)
+	if existing, ok, err := lockedPayment(ctx, queries, key, requestHash); err != nil || ok {
+		return existing, err
+	}
+
+	current, err := queries.LockSubscription(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Subscription{}, domain.ErrNotFound
+		}
+
+		return domain.Subscription{}, fmt.Errorf("lock subscription: %w", err)
+	}
+
+	tariffRow, err := queries.FindTariff(ctx, current.TariffID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Subscription{}, domain.ErrNotFound
+		}
+
+		return domain.Subscription{}, fmt.Errorf("find tariff: %w", err)
+	}
+
+	tariff, err := tariffFrom(tariffRow.ID, tariffRow.Name, tariffRow.MonthlyPriceMinor, tariffRow.MessageLimit, tariffRow.Type, tariffRow.IsBaseTariff)
+	if err != nil {
+		return domain.Subscription{}, err
+	}
+
+	sub, err := subscriptionFrom(
+		current.ID,
+		current.UserID,
+		current.OrganizationID,
+		current.TariffID,
+		current.Status,
+		current.MessageAllowance,
+		current.CurrentPeriodStart,
+		current.CurrentPeriodEnd,
+		paymentID(current.PaymentID),
+	)
+	if err != nil {
+		return domain.Subscription{}, err
+	}
+
+	next, err := domain.PlanPayment(sub, tariff, remaining, amountMinor, now, payment)
+	if err != nil {
+		return domain.Subscription{}, err
+	}
+
+	if err := insertKey(ctx, queries, key, operationReceivePayment, requestHash, next.ID); err != nil {
+		return domain.Subscription{}, err
+	}
+
+	if err := queries.RenewSubscription(ctx, RenewSubscriptionParams{
+		ID:                 next.ID,
+		MessageAllowance:   next.MessageAllowance,
+		CurrentPeriodStart: next.PeriodStart,
+		CurrentPeriodEnd:   next.PeriodEnd,
+		PaymentID:          paymentText(next.PaymentID),
+	}); err != nil {
+		return domain.Subscription{}, fmt.Errorf("renew subscription: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Subscription{}, fmt.Errorf("commit renew subscription: %w", err)
+	}
+
+	return next, nil
+}
+
+func lockedPayment(ctx context.Context, queries *Queries, key string, requestHash []byte) (domain.Subscription, bool, error) {
+	row, err := queries.FindIdempotencyForUpdate(ctx, key)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Subscription{}, false, nil
+		}
+
+		return domain.Subscription{}, false, fmt.Errorf("lock idempotency key: %w", err)
+	}
+
+	if row.Operation != operationReceivePayment || subtle.ConstantTimeCompare(row.RequestHash, requestHash) != 1 {
+		return domain.Subscription{}, false, domain.ErrIdempotencyConflict
+	}
+
+	stored, err := queries.FindSubscription(ctx, row.ResourceID)
+	if err != nil {
+		return domain.Subscription{}, false, fmt.Errorf("find subscription: %w", err)
+	}
+
+	sub, err := subscriptionFrom(
+		stored.ID,
+		stored.UserID,
+		stored.OrganizationID,
+		stored.TariffID,
+		stored.Status,
+		stored.MessageAllowance,
+		stored.CurrentPeriodStart,
+		stored.CurrentPeriodEnd,
+		paymentID(stored.PaymentID),
+	)
+	if err != nil {
+		return domain.Subscription{}, false, err
+	}
+
+	return sub, true, nil
 }
 
 func lockedTariff(ctx context.Context, queries *Queries, key string, requestHash []byte) (domain.Tariff, bool, error) {
@@ -480,6 +647,7 @@ func lockedSubscription(ctx context.Context, queries *Queries, key string, reque
 		stored.MessageAllowance,
 		stored.CurrentPeriodStart,
 		stored.CurrentPeriodEnd,
+		paymentID(stored.PaymentID),
 	)
 	if err != nil {
 		return domain.Subscription{}, false, err
@@ -572,6 +740,7 @@ func subscriptionFrom(
 	status string,
 	allowance int64,
 	periodStart, periodEnd time.Time,
+	payment string,
 ) (domain.Subscription, error) {
 	parsed := domain.Status(status)
 	if !parsed.Valid() {
@@ -587,7 +756,24 @@ func subscriptionFrom(
 		MessageAllowance: allowance,
 		PeriodStart:      periodStart,
 		PeriodEnd:        periodEnd,
+		PaymentID:        payment,
 	}, nil
+}
+
+func paymentID(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+
+	return value.String
+}
+
+func paymentText(id string) pgtype.Text {
+	if id == "" {
+		return pgtype.Text{}
+	}
+
+	return pgtype.Text{String: id, Valid: true}
 }
 
 func messageLimit(limit int) (int32, error) {

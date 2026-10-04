@@ -53,7 +53,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE id = $1;
 
@@ -66,7 +67,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE id = $1
 FOR UPDATE;
@@ -80,7 +82,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE user_id = $1 AND status = 'active';
 
@@ -93,7 +96,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE organization_id = $1 AND status = 'active';
 
@@ -108,6 +112,16 @@ SET
     updated_at = now()
 WHERE id = $1;
 
+-- name: RenewSubscription :exec
+UPDATE subscriptions
+SET
+    message_allowance = $2,
+    current_period_start = $3,
+    current_period_end = $4,
+    payment_id = $5,
+    updated_at = now()
+WHERE id = $1;
+
 -- name: LockDueSubscriptions :many
 SELECT
     subscriptions.id,
@@ -118,6 +132,7 @@ SELECT
     subscriptions.message_allowance,
     subscriptions.current_period_start,
     subscriptions.current_period_end,
+    subscriptions.payment_id,
     tariffs.name,
     tariffs.monthly_price_minor,
     tariffs.message_limit,

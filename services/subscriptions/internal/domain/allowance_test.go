@@ -90,3 +90,43 @@ func TestPlanExpiry(t *testing.T) {
 	require.Equal(t, int64(40), expired.MessageAllowance)
 	require.Equal(t, end, expired.PeriodEnd)
 }
+
+func TestPlanPayment(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	now := start.AddDate(0, 0, 10)
+	tariff := domain.Tariff{ID: uuid.New(), MonthlyPriceMinor: 100, MessageLimit: 100}
+	sub := domain.Subscription{
+		ID: uuid.New(), TariffID: tariff.ID, Status: domain.StatusActive,
+		MessageAllowance: 40, PeriodStart: start, PeriodEnd: end,
+	}
+	paymentID := uuid.New().String()
+
+	early, err := domain.PlanPayment(sub, tariff, 40, 100, now, paymentID)
+	require.NoError(t, err)
+	require.Equal(t, start, early.PeriodStart)
+	require.Equal(t, end.AddDate(0, 1, 0), early.PeriodEnd)
+	require.Equal(t, int64(100), early.MessageAllowance)
+	require.Equal(t, paymentID, early.PaymentID)
+	require.True(t, early.ActiveAt(now))
+
+	overdraft, err := domain.PlanPayment(sub, tariff, -3, 100, now, paymentID)
+	require.NoError(t, err)
+	require.Equal(t, int64(97), overdraft.MessageAllowance)
+
+	lateNow := end.AddDate(0, 0, 3)
+	late, err := domain.PlanPayment(sub, tariff, 0, 100, lateNow, paymentID)
+	require.NoError(t, err)
+	require.Equal(t, lateNow, late.PeriodStart)
+	require.Equal(t, lateNow.AddDate(0, 1, 0), late.PeriodEnd)
+
+	inactive := sub
+	inactive.Status = domain.StatusExpired
+	_, err = domain.PlanPayment(inactive, tariff, 0, 100, now, paymentID)
+	require.ErrorIs(t, err, domain.ErrSubscriptionInactive)
+
+	_, err = domain.PlanPayment(sub, tariff, 0, 50, now, paymentID)
+	require.ErrorIs(t, err, domain.ErrInvalidArgument)
+}
