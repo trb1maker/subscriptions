@@ -71,6 +71,24 @@ func TestRegisterUnknownOrganization(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrOrganizationNotFound)
 }
 
+func TestLookupSubject(t *testing.T) {
+	t.Parallel()
+
+	svc := newService(t, newMemStore(), &fakePasswords{}, newFakeTokens(), nil)
+	created, err := svc.Register(context.Background(), "ada@example.com", "long-enough", "key-1", nil)
+	require.NoError(t, err)
+
+	orgID, err := svc.LookupSubject(context.Background(), created.UserID, domain.PrincipalUser)
+	require.NoError(t, err)
+	require.Nil(t, orgID)
+
+	_, err = svc.LookupSubject(context.Background(), uuid.New(), domain.PrincipalUser)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+
+	_, err = svc.LookupSubject(context.Background(), uuid.New(), "nope")
+	require.ErrorIs(t, err, domain.ErrInvalidSubject)
+}
+
 func TestLoginRejectsWrongPassword(t *testing.T) {
 	t.Parallel()
 
@@ -309,4 +327,28 @@ func (m *memStore) UserByEmail(_ context.Context, email string) (domain.User, er
 	}
 
 	return m.users[id], nil
+}
+
+func (m *memStore) UserByID(_ context.Context, id uuid.UUID) (domain.User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user, ok := m.users[id]
+	if !ok {
+		return domain.User{}, domain.ErrNotFound
+	}
+
+	return user, nil
+}
+
+func (m *memStore) OrganizationByID(_ context.Context, id uuid.UUID) (domain.Organization, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	org, ok := m.organizations[id]
+	if !ok {
+		return domain.Organization{}, domain.ErrNotFound
+	}
+
+	return org, nil
 }

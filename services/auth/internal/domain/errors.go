@@ -14,4 +14,5 @@ var (
 	ErrInvalidOrganizationID = errors.New("invalid organization id")
 	ErrNotFound              = errors.New("not found")
 	ErrInvalidToken          = errors.New("invalid token")
+	ErrInvalidSubject        = errors.New("invalid subject")
 )
