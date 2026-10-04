@@ -8,22 +8,12 @@ vars:
   DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
 
 tasks:
-  fmt:check:
-    desc: Проверка форматирования кода
-    cmd: "{{.GOLANGCILINT}} fmt --diff ./..."
-    silent: true
-
-  fmt:fix:
+  fmt:
     desc: Форматирование кода
     cmd: "{{.GOLANGCILINT}} fmt ./..."
     silent: true
 
-  lint:check:
-    desc: Линтинг кода
-    cmd: "{{.GOLANGCILINT}} run ./..."
-    silent: true
-
-  lint:fix:
+  lint:
     desc: Линтинг кода
     cmd: "{{.GOLANGCILINT}} run --fix ./..."
     silent: true
@@ -35,7 +25,15 @@ tasks:
 
   check:
     desc: Набор проверок перед коммитом
-    deps: [fmt:fix, lint:fix, test:unit]
+    deps: [fmt, lint, test:unit]
+    silent: true
+
+  ci:
+    desc: Набор проверок без исправлений
+    cmds:
+      - "{{.GOLANGCILINT}} fmt --diff ./..."
+      - "{{.GOLANGCILINT}} run ./..."
+      - task test:unit
     silent: true
 
   dev:start:

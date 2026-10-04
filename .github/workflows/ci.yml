@@ -16,6 +16,4 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: task fmt:check
-      - run: task lint:check
-      - run: task test
+      - run: task ci
