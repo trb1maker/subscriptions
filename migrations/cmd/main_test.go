@@ -17,4 +17,7 @@ func TestRunRequiresDatabaseURL(t *testing.T) {
 
 	t.Setenv("SUBSCRIPTIONS_DATABASE_URL", "")
 	require.Equal(t, 1, run([]string{"subscriptions", "up"}))
+
+	t.Setenv("USAGE_CLICKHOUSE_DSN", "")
+	require.Equal(t, 1, run([]string{"usage", "up"}))
 }

@@ -9,6 +9,7 @@ import (
 
 	authmigrations "github.com/trb1maker/subscriptions/migrations/auth"
 	subscriptionsmigrations "github.com/trb1maker/subscriptions/migrations/subscriptions"
+	usagemigrations "github.com/trb1maker/subscriptions/migrations/usage"
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/migrate"
 )
@@ -20,8 +21,9 @@ const (
 )
 
 type migrationSet struct {
-	files fs.FS
-	env   string
+	files      fs.FS
+	env        string
+	clickHouse bool
 }
 
 func main() {
@@ -57,11 +59,19 @@ func run(args []string) int {
 
 	switch args[1] {
 	case "up":
-		err = migrate.Up(ctx, dsn, set.files)
+		if set.clickHouse {
+			err = migrate.UpClickHouse(ctx, dsn, set.files)
+		} else {
+			err = migrate.Up(ctx, dsn, set.files)
+		}
 	case "down":
-		err = migrate.Down(ctx, dsn, set.files)
+		if set.clickHouse {
+			err = migrate.DownClickHouse(ctx, dsn, set.files)
+		} else {
+			err = migrate.Down(ctx, dsn, set.files)
+		}
 	case "status":
-		err = printStatus(ctx, log, dsn, set.files)
+		err = printStatus(ctx, log, dsn, set)
 	}
 	if err != nil {
 		log.ErrorContext(ctx, "migration failed", "error", err)
@@ -72,8 +82,16 @@ func run(args []string) int {
 	return 0
 }
 
-func printStatus(ctx context.Context, log *slog.Logger, dsn string, files fs.FS) error {
-	rows, err := migrate.Status(ctx, dsn, files)
+func printStatus(ctx context.Context, log *slog.Logger, dsn string, set migrationSet) error {
+	var (
+		rows []migrate.Step
+		err  error
+	)
+	if set.clickHouse {
+		rows, err = migrate.StatusClickHouse(ctx, dsn, set.files)
+	} else {
+		rows, err = migrate.Status(ctx, dsn, set.files)
+	}
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
 	}
@@ -98,5 +116,6 @@ func services() map[string]migrationSet {
 	return map[string]migrationSet{
 		"auth":          {files: authmigrations.FS, env: "AUTH_DATABASE_URL"},
 		"subscriptions": {files: subscriptionsmigrations.FS, env: "SUBSCRIPTIONS_DATABASE_URL"},
+		"usage":         {files: usagemigrations.FS, env: "USAGE_CLICKHOUSE_DSN", clickHouse: true},
 	}
 }
