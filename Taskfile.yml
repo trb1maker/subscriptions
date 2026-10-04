@@ -50,6 +50,11 @@ tasks:
     cmd: go run ./migrations/cmd {{.CLI_ARGS}}
     silent: true
 
+  certs:
+    desc: Сертификаты mTLS для локального запуска
+    cmd: sh deploy/certs/generate.sh
+    silent: true
+
   test:integration:
     desc: Запуск интеграционных тестов
     cmd: go test -tags=integration ./...

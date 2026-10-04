@@ -16,6 +16,7 @@ import (
 	"github.com/trb1maker/subscriptions/pkg/grpcserver"
 	"github.com/trb1maker/subscriptions/pkg/httpserver"
 	"github.com/trb1maker/subscriptions/pkg/logger"
+	"github.com/trb1maker/subscriptions/pkg/mtls"
 	"github.com/trb1maker/subscriptions/pkg/postgres"
 	grpcapi "github.com/trb1maker/subscriptions/services/auth/internal/adapters/grpc"
 	httpapi "github.com/trb1maker/subscriptions/services/auth/internal/adapters/http"
@@ -38,6 +39,9 @@ type config struct {
 	DatabaseURL string        `env:"AUTH_DATABASE_URL,required"`
 	JWTSecret   string        `env:"JWT_SECRET,required"`
 	JWTTTL      time.Duration `env:"JWT_TTL"           envDefault:"1h"`
+	TLSCertFile string        `env:"TLS_CERT_FILE,required"`
+	TLSKeyFile  string        `env:"TLS_KEY_FILE,required"`
+	TLSCAFile   string        `env:"TLS_CA_FILE,required"`
 }
 
 func main() {
@@ -94,7 +98,24 @@ func run() int {
 		return 1
 	}
 
-	grpcServer := grpcserver.New(log)
+	tlsCfg, err := mtls.ServerConfig(mtls.Files{
+		CertFile: cfg.TLSCertFile,
+		KeyFile:  cfg.TLSKeyFile,
+		CAFile:   cfg.TLSCAFile,
+	})
+	if err != nil {
+		log.ErrorContext(ctx, "tls init failed", "error", err)
+
+		return 1
+	}
+
+	grpcServer, err := grpcserver.NewTLS(log, tlsCfg)
+	if err != nil {
+		log.ErrorContext(ctx, "grpc init failed", "error", err)
+
+		return 1
+	}
+
 	authv1.RegisterAuthServiceServer(grpcServer, grpcapi.NewServer(service, log))
 
 	httpServer := &http.Server{

@@ -1,3 +1,9 @@
 bin/
 .env
 .DS_Store
+deploy/certs/*.key
+deploy/certs/*.crt
+deploy/certs/*.csr
+deploy/certs/*.srl
+deploy/certs/*.pem
+deploy/certs/*.ext
