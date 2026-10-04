@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"uuid"
 
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/domain"
 )
@@ -62,5 +63,40 @@ func (s *Service) CloseExpired(ctx context.Context) (domain.ExpiryReport, error)
 		return domain.ExpiryReport{}, fmt.Errorf("close expired: %w", err)
 	}
 
+	if err := s.publishPeriods(ctx, report.Applied); err != nil {
+		return report, err
+	}
+
 	return report, nil
+}
+
+func (s *Service) publishPeriods(ctx context.Context, applied []domain.Subscription) error {
+	if s.periods == nil || len(applied) == 0 {
+		return nil
+	}
+
+	now := s.clock().UTC()
+	for _, sub := range applied {
+		owner, ok := sub.Owner()
+		if !ok {
+			return domain.ErrInvalidArgument
+		}
+
+		allowance := sub.MessageAllowance
+		if sub.Status == domain.StatusExpired {
+			allowance = 0
+		}
+
+		err := s.periods.PublishPeriodEnded(ctx, PeriodNotice{
+			ID:         uuid.New(),
+			OccurredAt: now,
+			Owner:      owner,
+			Allowance:  allowance,
+		})
+		if err != nil {
+			return fmt.Errorf("publish period ended: %w", err)
+		}
+	}
+
+	return nil
 }

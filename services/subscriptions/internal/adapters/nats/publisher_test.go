@@ -50,6 +50,29 @@ func TestPublishPaymentReceived(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrUnavailable)
 }
 
+func TestPublishPeriodEndedBurnsAllowance(t *testing.T) {
+	t.Parallel()
+
+	log, err := logger.New(io.Discard, "error")
+	require.NoError(t, err)
+
+	eventID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	ownerID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	when := time.Date(2026, 10, 4, 12, 0, 0, int(time.Millisecond), time.UTC)
+	event := app.PeriodNotice{
+		ID: eventID, OccurredAt: when, Owner: domain.Owner{ID: ownerID, Kind: domain.OwnerOrganization},
+	}
+
+	stream := &fakeStream{ack: &jetstream.PubAck{}}
+	require.NoError(t, NewPublisher(stream, log).PublishPeriodEnded(context.Background(), event))
+	require.Equal(t, "usage.owner.organization."+ownerID.String(), stream.subject)
+
+	var decoded eventsv1.UsageEvent
+	require.NoError(t, proto.Unmarshal(stream.payload, &decoded))
+	require.Equal(t, eventID.String(), decoded.GetEventId())
+	require.Equal(t, int64(0), decoded.GetSubscriptionPeriodEnded().GetAllowance())
+}
+
 type fakeStream struct {
 	ack     *jetstream.PubAck
 	err     error

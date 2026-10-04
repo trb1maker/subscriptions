@@ -67,7 +67,9 @@ func NextPeriodEnd(start time.Time) time.Time {
 }
 
 // ExpiryReport — сколько подписок cron закрыл и какие оставил без базового тарифа.
+// Applied — строки после применения правила. По ним публикуется окончание периода.
 type ExpiryReport struct {
 	Closed  int
 	Skipped []uuid.UUID
+	Applied []Subscription
 }

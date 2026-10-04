@@ -148,11 +148,12 @@ func run() int {
 	}
 	defer closeNATS(ctx, log, natsConn)
 
+	publisher := natsadapter.NewPublisher(jetStream, log)
 	service, err := app.New(
 		subscriptionspostgres.NewRepository(pool),
 		authadapter.NewClient(authv1.NewAuthServiceClient(authConn), log),
 		usageadapter.NewClient(usagev1.NewUsageServiceClient(usageConn), log),
-		natsadapter.NewPublisher(jetStream, log),
+		publisher,
 		[]byte(cfg.RequestPepper),
 		nil,
 	)
@@ -169,6 +170,7 @@ func run() int {
 		return 1
 	}
 
+	service.SetPeriods(publisher)
 	service.SetMetrics(recorded)
 
 	scheduler := cron.New()

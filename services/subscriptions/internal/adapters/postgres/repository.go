@@ -293,6 +293,7 @@ func (r *Repository) CloseExpired(ctx context.Context, now time.Time) (domain.Ex
 		}
 
 		report.Closed++
+		report.Applied = append(report.Applied, next)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

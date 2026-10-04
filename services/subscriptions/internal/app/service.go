@@ -49,6 +49,19 @@ type Payments interface {
 	PublishPaymentReceived(ctx context.Context, event PaymentNotice) error
 }
 
+// PeriodNotice — остаток после окончания периода.
+type PeriodNotice struct {
+	ID         uuid.UUID
+	OccurredAt time.Time
+	Owner      domain.Owner
+	Allowance  int64
+}
+
+// Periods публикует SubscriptionPeriodEnded.
+type Periods interface {
+	PublishPeriodEnded(ctx context.Context, event PeriodNotice) error
+}
+
 const (
 	// PaymentStatusReceived — платёж проведён первый раз.
 	PaymentStatusReceived = "received"
@@ -82,6 +95,7 @@ type Service struct {
 	directory Directory
 	balances  Balances
 	payments  Payments
+	periods   Periods
 	recorded  PaymentMetrics
 	pepper    []byte
 	now       func() time.Time
@@ -118,6 +132,11 @@ func New(store Store, directory Directory, balances Balances, payments Payments,
 		pepper:    append([]byte(nil), pepper...),
 		now:       now,
 	}, nil
+}
+
+// SetPeriods подключает публикацию окончания периода. nil оставляет cron без события в Usage.
+func (s *Service) SetPeriods(periods Periods) {
+	s.periods = periods
 }
 
 // SetMetrics подключает счётчик платежей. nil оставляет пустую реализацию.
