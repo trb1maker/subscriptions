@@ -19,6 +19,7 @@ const (
 	codeConflict        = "conflict"
 	codeUnavailable     = "unavailable"
 	codeInternal        = "internal"
+	codeForbidden       = "forbidden"
 )
 
 type errorBody struct {
@@ -53,6 +54,8 @@ func (h handler) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code = http.StatusBadRequest, codeInvalidArgument
 	case errors.Is(err, domain.ErrUnauthenticated), errors.Is(err, domain.ErrInvalidWebhookKey):
 		status, code = http.StatusUnauthorized, codeUnauthenticated
+	case errors.Is(err, domain.ErrForbidden):
+		status, code = http.StatusForbidden, codeForbidden
 	case errors.Is(err, domain.ErrNotFound):
 		status, code = http.StatusNotFound, codeNotFound
 	case errors.Is(err, domain.ErrConflict):

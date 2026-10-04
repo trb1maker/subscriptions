@@ -12,14 +12,15 @@ import (
 )
 
 type handler struct {
-	log        *slog.Logger
-	auth       app.Auth
-	webhookKey string
+	log           *slog.Logger
+	auth          app.Auth
+	subscriptions app.Subscriptions
+	webhookKey    string
 }
 
 // NewRouter собирает внешние маршруты Gateway.
-func NewRouter(log *slog.Logger, auth app.Auth, webhookKey string) http.Handler {
-	h := handler{log: log, auth: auth, webhookKey: webhookKey}
+func NewRouter(log *slog.Logger, auth app.Auth, subscriptions app.Subscriptions, webhookKey string) http.Handler {
+	h := handler{log: log, auth: auth, subscriptions: subscriptions, webhookKey: webhookKey}
 
 	router := chi.NewRouter()
 	middleware.Use(router, log)
@@ -31,6 +32,11 @@ func NewRouter(log *slog.Logger, auth app.Auth, webhookKey string) http.Handler 
 		api.Group(func(protected chi.Router) {
 			protected.Use(h.authenticate)
 			protected.Method(http.MethodPost, "/organizations", http.HandlerFunc(h.createOrganization))
+			protected.Method(http.MethodPost, "/tariffs", http.HandlerFunc(h.createTariff))
+			protected.Method(http.MethodGet, "/tariffs", http.HandlerFunc(h.listTariffs))
+			protected.Method(http.MethodPost, "/subscriptions", http.HandlerFunc(h.createSubscription))
+			protected.Method(http.MethodPut, "/subscriptions/{id}", http.HandlerFunc(h.changeSubscription))
+			protected.Method(http.MethodGet, "/subscriptions/{id}", http.HandlerFunc(h.getSubscription))
 		})
 	})
 

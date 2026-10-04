@@ -40,7 +40,7 @@ func TestMapsGRPCStatus(t *testing.T) {
 		{code: codes.DeadlineExceeded, target: domain.ErrUnavailable},
 		{code: codes.Canceled, target: domain.ErrUnavailable},
 		{code: codes.Internal, target: domain.ErrInternal},
-		{code: codes.PermissionDenied, target: domain.ErrInternal},
+		{code: codes.PermissionDenied, target: domain.ErrForbidden},
 	}
 
 	for _, tt := range tests {
