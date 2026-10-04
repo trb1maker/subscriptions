@@ -4,7 +4,8 @@ version: "3"
 
 vars:
   GOLANGCILINT: "go tool -modfile={{.ROOT_DIR}}/tools/golangci-lint.mod golangci-lint"
-  GOOSE: "go tool -modfile={{.ROOT_DIR}}/tools/goose.mod goose"
+  BUF: "go tool -modfile={{.ROOT_DIR}}/tools/buf.mod buf"
+  SQLC: "go tool -modfile={{.ROOT_DIR}}/tools/sqlc.mod sqlc"
   DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
 
 tasks:
@@ -19,7 +20,7 @@ tasks:
     silent: true
 
   test:unit:
-    desc: Запуск тестов
+    desc: Запуск юнит-тестов
     cmd: go test ./...
     silent: true
 
@@ -36,6 +37,24 @@ tasks:
       - task test:unit
     silent: true
 
+  generate:
+    desc: Сгенерировать контракты и запросы
+    cmds:
+      - "{{.BUF}} generate"
+      - "{{.SQLC}} generate"
+    silent: true
+
+  migrate:
+    desc: Миграции сервиса
+    dotenv: [.env]
+    cmd: go run ./migrations/cmd {{.CLI_ARGS}}
+    silent: true
+
+  test:integration:
+    desc: Запуск интеграционных тестов
+    cmd: go test -tags=integration ./...
+    silent: true
+
   dev:start:
     desc: Развернуть инфраструктуру для разработки
     dotenv: [.env]
@@ -43,7 +62,7 @@ tasks:
     silent: true
 
   dev:stop:
-    desc: Развернуть инфраструктуру для разработки
+    desc: Остановить инфраструктуру для разработки
     dotenv: [.env]
     cmd: docker compose {{.DEV_COMPOSE}} down -v
     silent: true

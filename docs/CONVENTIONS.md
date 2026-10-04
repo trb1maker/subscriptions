@@ -18,9 +18,9 @@
 │           ├── domain/
 │           ├── app/
 │           └── adapters/
-├── db/
-│   ├── auth/migrations/          # goose
-│   └── subscriptions/migrations/
+├── migrations/
+│   ├── auth/                     # шаги goose сервиса auth
+│   └── subscriptions/            # шаги goose сервиса subscriptions
 ├── deploy/
 │   └── docker-compose-dev.yml
 ├── go.mod                        # один модуль на репозиторий
@@ -43,6 +43,7 @@
 - `log/slog`;
 - HTTP- и gRPC-серверы, mTLS, восстановление после паники, дедлайны;
 - пул PostgreSQL, клиенты Redis, NATS JetStream, ClickHouse;
+- применение миграций PostgreSQL;
 - OpenTelemetry и Prometheus;
 - общий graceful shutdown.
 
@@ -90,7 +91,8 @@
 | JWT | `github.com/golang-jwt/jwt/v5` |
 | PostgreSQL | `github.com/jackc/pgx/v5` |
 | SQL-запросы | `sqlc` |
-| Миграции | `github.com/pressly/goose/v3` |
+| Миграции | `github.com/pressly/goose/v3` через `pkg/migrate`. Шаги лежат в `migrations/<сервис>`, команда `task migrate -- <сервис> up` |
+| Пароли | `golang.org/x/crypto/bcrypt` |
 | Redis | `github.com/redis/go-redis/v9` |
 | ClickHouse | `github.com/ClickHouse/clickhouse-go/v2` |
 | NATS | `github.com/nats-io/nats.go`, JetStream |
