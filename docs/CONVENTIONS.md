@@ -22,14 +22,15 @@
 │   ├── auth/                     # шаги goose сервиса auth
 │   └── subscriptions/            # шаги goose сервиса subscriptions
 ├── deploy/
-│   └── docker-compose-dev.yml
+│   ├── docker-compose-dev.yml  # демо-стенд, task demo:up
+│   └── docker-compose-ha.yml   # отказ узла, task ha:up
 ├── go.mod                        # один модуль на репозиторий
 └── tests/e2e/
 ```
 
 Один `go.mod` на репозиторий, без `go.work` и без `go.mod` у сервиса. `cmd` и `internal` остаются внутри `services/<имя>`. Сервисы и `pkg` — пакеты корневого модуля. В образ сервиса попадает собранный бинарник.
 
-Инфраструктура разработки — `deploy/docker-compose-dev.yml`. Корневой `docker-compose.yml` из задания не добавляем: отказоустойчивый контур данных — отдельная итерация в конце плана.
+Демо-стенд — `deploy/docker-compose-dev.yml`, команда `task demo:up`. Отказоустойчивый контур — `deploy/docker-compose-ha.yml`, команда `task ha:up`. Корневой `docker-compose.yml` из задания не добавляем.
 
 Команда сервиса — только сборка: прочитать конфигурацию, соединить адаптеры с use case, запустить процесс. Бизнес-решений в `cmd/` нет.
 

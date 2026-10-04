@@ -1,0 +1,783 @@
+# Отказоустойчивый стенд. Демо остаётся на docker-compose-dev.yml (task demo:up).
+
+x-nats-ready: &nats-ready
+  nats-1:
+    condition: service_healthy
+  nats-2:
+    condition: service_healthy
+  nats-3:
+    condition: service_healthy
+
+x-etcd-env: &etcd-env
+  ETCD_DATA_DIR: /etcd-data
+  ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+  ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+  ETCD_INITIAL_CLUSTER: etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380
+  ETCD_INITIAL_CLUSTER_TOKEN: subscriptions
+  ETCDCTL_API: "3"
+  ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
+
+x-etcd: &etcd
+  image: subscriptions-etcd
+  build:
+    context: ./etcd
+  restart: unless-stopped
+  healthcheck:
+    test: [ "CMD", "etcdctl", "endpoint", "health" ]
+    interval: 5s
+    timeout: 5s
+    retries: 20
+    start_period: 5s
+
+x-patroni: &patroni
+  image: subscriptions-patroni
+  build:
+    context: .
+    dockerfile: patroni/Dockerfile
+  restart: unless-stopped
+  healthcheck:
+    test: [ "CMD-SHELL", "psql -U ${POSTGRES_USER} -d auth -c 'SELECT 1'" ]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+    start_period: 20s
+  depends_on:
+    etcd-1:
+      condition: service_healthy
+    etcd-2:
+      condition: service_healthy
+    etcd-3:
+      condition: service_healthy
+
+services:
+  etcd-1:
+    <<: *etcd
+    hostname: etcd-1
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-1
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-1:2380
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-1:2379
+    volumes:
+      - etcd-1:/etcd-data
+
+  etcd-2:
+    <<: *etcd
+    hostname: etcd-2
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-2
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-2:2380
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-2:2379
+    volumes:
+      - etcd-2:/etcd-data
+
+  etcd-3:
+    <<: *etcd
+    hostname: etcd-3
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-3
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-3:2380
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-3:2379
+    volumes:
+      - etcd-3:/etcd-data
+
+  postgres-1:
+    <<: *patroni
+    hostname: postgres-1
+    environment:
+      PATRONI_NAME: postgres-1
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-1:/var/lib/postgresql/data
+
+  postgres-2:
+    <<: *patroni
+    hostname: postgres-2
+    environment:
+      PATRONI_NAME: postgres-2
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "55433:5432"
+    volumes:
+      - postgres-2:/var/lib/postgresql/data
+
+  postgres-3:
+    <<: *patroni
+    hostname: postgres-3
+    environment:
+      PATRONI_NAME: postgres-3
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "55434:5432"
+    volumes:
+      - postgres-3:/var/lib/postgresql/data
+
+  redis-1:
+    image: redis:8.10-alpine
+    hostname: redis-1
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/redis-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_ROLE: master
+      REDIS_ANNOUNCE: redis-1
+    ports:
+      - "56379:6379"
+    volumes:
+      - ./redis/redis-entrypoint.sh:/redis-entrypoint.sh:ro
+      - redis-1:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} info replication | grep -q 'connected_slaves:[1-9]'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  redis-2:
+    image: redis:8.10-alpine
+    hostname: redis-2
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/redis-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_ROLE: replica
+      REDIS_MASTER: redis-1
+      REDIS_ANNOUNCE: redis-2
+    ports:
+      - "56380:6379"
+    volumes:
+      - ./redis/redis-entrypoint.sh:/redis-entrypoint.sh:ro
+      - redis-2:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis-3:
+    image: redis:8.10-alpine
+    hostname: redis-3
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/redis-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_ROLE: replica
+      REDIS_MASTER: redis-1
+      REDIS_ANNOUNCE: redis-3
+    ports:
+      - "56381:6379"
+    volumes:
+      - ./redis/redis-entrypoint.sh:/redis-entrypoint.sh:ro
+      - redis-3:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis-sentinel-1:
+    image: redis:8.10-alpine
+    hostname: redis-sentinel-1
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/sentinel-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_MASTER: redis-1
+      SENTINEL_ANNOUNCE: redis-sentinel-1
+    ports:
+      - "56479:26379"
+    volumes:
+      - ./redis/sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+      - redis-sentinel-1:/data
+    depends_on:
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 sentinel get-master-addr-by-name usage | grep -q redis" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis-sentinel-2:
+    image: redis:8.10-alpine
+    hostname: redis-sentinel-2
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/sentinel-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_MASTER: redis-1
+      SENTINEL_ANNOUNCE: redis-sentinel-2
+    ports:
+      - "56480:26379"
+    volumes:
+      - ./redis/sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+      - redis-sentinel-2:/data
+    depends_on:
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 sentinel get-master-addr-by-name usage | grep -q redis" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis-sentinel-3:
+    image: redis:8.10-alpine
+    hostname: redis-sentinel-3
+    user: "0:0"
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/sentinel-entrypoint.sh" ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_MASTER: redis-1
+      SENTINEL_ANNOUNCE: redis-sentinel-3
+    ports:
+      - "56481:26379"
+    volumes:
+      - ./redis/sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+      - redis-sentinel-3:/data
+    depends_on:
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 sentinel get-master-addr-by-name usage | grep -q redis" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  nats-1:
+    image: nats:2.14-alpine
+    hostname: nats-1
+    restart: unless-stopped
+    command:
+      - "-js"
+      - "-m"
+      - "8222"
+      - "-n"
+      - "nats-1"
+      - "-p"
+      - "4222"
+      - "--cluster"
+      - "nats://0.0.0.0:6222"
+      - "--cluster_name"
+      - "subscriptions"
+      - "--routes"
+      - "nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222"
+      - "-sd"
+      - "/data"
+    ports:
+      - "54222:4222"
+      - "58222:8222"
+    volumes:
+      - nats-1:/data
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "4222" ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+  nats-2:
+    image: nats:2.14-alpine
+    hostname: nats-2
+    restart: unless-stopped
+    command:
+      - "-js"
+      - "-m"
+      - "8222"
+      - "-n"
+      - "nats-2"
+      - "-p"
+      - "4222"
+      - "--cluster"
+      - "nats://0.0.0.0:6222"
+      - "--cluster_name"
+      - "subscriptions"
+      - "--routes"
+      - "nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222"
+      - "-sd"
+      - "/data"
+    ports:
+      - "54223:4222"
+      - "58223:8222"
+    volumes:
+      - nats-2:/data
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "4222" ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+  nats-3:
+    image: nats:2.14-alpine
+    hostname: nats-3
+    restart: unless-stopped
+    command:
+      - "-js"
+      - "-m"
+      - "8222"
+      - "-n"
+      - "nats-3"
+      - "-p"
+      - "4222"
+      - "--cluster"
+      - "nats://0.0.0.0:6222"
+      - "--cluster_name"
+      - "subscriptions"
+      - "--routes"
+      - "nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222"
+      - "-sd"
+      - "/data"
+    ports:
+      - "54224:4222"
+      - "58224:8222"
+    volumes:
+      - nats-3:/data
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "4222" ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+  keeper-1:
+    image: clickhouse:26.7
+    hostname: keeper-1
+    restart: unless-stopped
+    command: [ "clickhouse-keeper", "--config-file=/etc/clickhouse-keeper/keeper_config.xml" ]
+    volumes:
+      - ./clickhouse/keeper/keeper-1.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - keeper-1:/var/lib/clickhouse
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  keeper-2:
+    image: clickhouse:26.7
+    hostname: keeper-2
+    restart: unless-stopped
+    command: [ "clickhouse-keeper", "--config-file=/etc/clickhouse-keeper/keeper_config.xml" ]
+    volumes:
+      - ./clickhouse/keeper/keeper-2.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - keeper-2:/var/lib/clickhouse
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  keeper-3:
+    image: clickhouse:26.7
+    hostname: keeper-3
+    restart: unless-stopped
+    command: [ "clickhouse-keeper", "--config-file=/etc/clickhouse-keeper/keeper_config.xml" ]
+    volumes:
+      - ./clickhouse/keeper/keeper-3.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - keeper-3:/var/lib/clickhouse
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  clickhouse-1:
+    image: clickhouse:26.7
+    hostname: clickhouse-1
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "58123:8123"
+      - "59000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./clickhouse/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./clickhouse/config.d/macros-1.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - clickhouse-1:/var/lib/clickhouse
+    depends_on:
+      keeper-1:
+        condition: service_healthy
+      keeper-2:
+        condition: service_healthy
+      keeper-3:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host 127.0.0.1 --user ${CLICKHOUSE_USER} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  clickhouse-2:
+    image: clickhouse:26.7
+    hostname: clickhouse-2
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "58124:8123"
+      - "59001:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./clickhouse/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./clickhouse/config.d/macros-2.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - clickhouse-2:/var/lib/clickhouse
+    depends_on:
+      keeper-1:
+        condition: service_healthy
+      keeper-2:
+        condition: service_healthy
+      keeper-3:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host 127.0.0.1 --user ${CLICKHOUSE_USER} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  clickhouse-bootstrap:
+    image: clickhouse:26.7
+    entrypoint: [ "/bin/bash", "/bootstrap.sh" ]
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./clickhouse/bootstrap.sh:/bootstrap.sh:ro
+    depends_on:
+      clickhouse-1:
+        condition: service_healthy
+      clickhouse-2:
+        condition: service_healthy
+    restart: "no"
+
+  clickhouse:
+    image: haproxy:3.2-alpine
+    restart: unless-stopped
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      clickhouse-1:
+        condition: service_healthy
+      clickhouse-2:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    ports:
+      - 59090:9090
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.67.0
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - 56686:16686
+      - 54317:4317
+
+  vector:
+    image: timberio/vector:0.46.1-debian
+    user: "0:0"
+    depends_on:
+      clickhouse-1:
+        condition: service_healthy
+      clickhouse-2:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./observability/vector.yaml:/etc/vector/vector.yaml:ro
+      - ./observability/vector-data-ha:/var/lib/vector
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    depends_on:
+      - prometheus
+      - jaeger
+      - clickhouse
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    ports:
+      - 53000:3000
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  migrate-auth:
+    profiles: [ "demo" ]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: [ "auth", "up" ]
+    environment:
+      AUTH_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-1:5432,postgres-2:5432,postgres-3:5432/auth?target_session_attrs=read-write&sslmode=disable"
+    depends_on:
+      postgres-1:
+        condition: service_healthy
+      postgres-2:
+        condition: service_healthy
+      postgres-3:
+        condition: service_healthy
+    restart: "no"
+
+  migrate-subscriptions:
+    profiles: [ "demo" ]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: [ "subscriptions", "up" ]
+    environment:
+      SUBSCRIPTIONS_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-1:5432,postgres-2:5432,postgres-3:5432/subscriptions?target_session_attrs=read-write&sslmode=disable"
+    depends_on:
+      postgres-1:
+        condition: service_healthy
+      postgres-2:
+        condition: service_healthy
+      postgres-3:
+        condition: service_healthy
+    restart: "no"
+
+  migrate-usage:
+    profiles: [ "demo" ]
+    image: subscriptions-migrate
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./migrations/cmd
+    command: [ "usage", "up" ]
+    environment:
+      USAGE_CLICKHOUSE_DSN: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse-1:9000/default
+    depends_on:
+      clickhouse-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+
+  auth:
+    profiles: [ "demo" ]
+    container_name: subscriptions-auth
+    image: subscriptions-auth
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/auth/cmd/auth
+    environment:
+      HTTP_ADDR: ":8081"
+      GRPC_ADDR: ":9091"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      AUTH_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-1:5432,postgres-2:5432,postgres-3:5432/auth?target_session_attrs=read-write&sslmode=disable"
+      JWT_SECRET: dev-secret
+      JWT_TTL: 12h
+      TLS_CERT_FILE: /certs/auth.crt
+      TLS_KEY_FILE: /certs/auth.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      migrate-auth:
+        condition: service_completed_successfully
+
+  subscriptions:
+    profiles: [ "demo" ]
+    container_name: subscriptions-subscriptions
+    image: subscriptions-subscriptions
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/subscriptions/cmd/subscriptions
+    environment:
+      HTTP_ADDR: ":8082"
+      GRPC_ADDR: ":9092"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      SUBSCRIPTIONS_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-1:5432,postgres-2:5432,postgres-3:5432/subscriptions?target_session_attrs=read-write&sslmode=disable"
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      USAGE_GRPC_ADDR: usage:9093
+      USAGE_GRPC_SERVER_NAME: usage
+      SUBSCRIPTIONS_NATS_URL: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+      SUBSCRIPTIONS_REQUEST_PEPPER: pepper
+      TLS_CERT_FILE: /certs/subscriptions.crt
+      TLS_KEY_FILE: /certs/subscriptions.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      <<: *nats-ready
+      migrate-subscriptions:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+      usage:
+        condition: service_started
+
+  usage:
+    profiles: [ "demo" ]
+    container_name: subscriptions-usage
+    image: subscriptions-usage
+    restart: on-failure
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/usage/cmd/usage
+    environment:
+      HTTP_ADDR: ":8083"
+      GRPC_ADDR: ":9093"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      USAGE_REDIS_URL: "sentinel://:${REDIS_PASSWORD}@redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379/0?master=usage"
+      USAGE_CLICKHOUSE_DSN: "clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse-1:9000,clickhouse-2:9000/default"
+      USAGE_NATS_URL: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+      USAGE_NATS_STREAM_REPLICAS: "3"
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      TLS_CERT_FILE: /certs/usage.crt
+      TLS_KEY_FILE: /certs/usage.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      <<: *nats-ready
+      migrate-usage:
+        condition: service_completed_successfully
+      redis-sentinel-1:
+        condition: service_healthy
+      redis-sentinel-2:
+        condition: service_healthy
+      redis-sentinel-3:
+        condition: service_healthy
+      clickhouse-1:
+        condition: service_healthy
+      clickhouse-2:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  gateway:
+    profiles: [ "demo" ]
+    container_name: subscriptions-gateway
+    image: subscriptions-gateway
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PACKAGE: ./services/gateway/cmd/gateway
+    environment:
+      HTTP_ADDR: ":8080"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      AUTH_GRPC_ADDR: auth:9091
+      AUTH_GRPC_SERVER_NAME: auth
+      SUBSCRIPTIONS_GRPC_ADDR: subscriptions:9092
+      SUBSCRIPTIONS_GRPC_SERVER_NAME: subscriptions
+      USAGE_GRPC_ADDR: usage:9093
+      USAGE_GRPC_SERVER_NAME: usage
+      GATEWAY_NATS_URL: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+      WEBHOOK_KEY: webhook-secret
+      GENERATE_DELAY_MIN: 50ms
+      GENERATE_DELAY_MAX: 200ms
+      GENERATE_FAILURE_PERCENT: "5"
+      TLS_CERT_FILE: /certs/gateway.crt
+      TLS_KEY_FILE: /certs/gateway.key
+      TLS_CA_FILE: /certs/ca.crt
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      <<: *nats-ready
+      auth:
+        condition: service_started
+      subscriptions:
+        condition: service_started
+      usage:
+        condition: service_started
+
+volumes:
+  etcd-1:
+  etcd-2:
+  etcd-3:
+  postgres-1:
+  postgres-2:
+  postgres-3:
+  redis-1:
+  redis-2:
+  redis-3:
+  redis-sentinel-1:
+  redis-sentinel-2:
+  redis-sentinel-3:
+  nats-1:
+  nats-2:
+  nats-3:
+  keeper-1:
+  keeper-2:
+  keeper-3:
+  clickhouse-1:
+  clickhouse-2:

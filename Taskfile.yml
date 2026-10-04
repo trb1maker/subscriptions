@@ -7,6 +7,7 @@ vars:
   BUF: "go tool -modfile={{.ROOT_DIR}}/tools/buf.mod buf"
   SQLC: "go tool -modfile={{.ROOT_DIR}}/tools/sqlc.mod sqlc"
   DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
+  HA_COMPOSE: "-f deploy/docker-compose-ha.yml"
 
 tasks:
   generate:
@@ -74,4 +75,17 @@ tasks:
     desc: Остановить стенд демонстрации
     dotenv: [.env]
     cmd: docker compose {{.DEV_COMPOSE}} --profile demo down -v
+    silent: true
+
+  ha:up:
+    desc: Поднять отказоустойчивый стенд
+    dotenv: [.env]
+    cmds:
+      - sh -c 'test -f deploy/certs/subscriptions.crt || { echo "Сначала task certs"; exit 1; }'
+      - docker compose {{.HA_COMPOSE}} --profile demo up -d --build
+
+  ha:down:
+    desc: Остановить отказоустойчивый стенд
+    dotenv: [.env]
+    cmd: docker compose {{.HA_COMPOSE}} --profile demo down -v
     silent: true
