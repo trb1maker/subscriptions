@@ -1,6 +1,6 @@
 ---
 description: Слои DDD внутри сервиса
-globs: "internal/**/*.go"
+globs: "services/**/internal/**/*.go"
 alwaysApply: false
 ---
 

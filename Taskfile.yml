@@ -3,8 +3,8 @@
 version: "3"
 
 vars:
-  GOLANGCILINT: "go tool -modfile=tools/golangci-lint.mod golangci-lint"
-  GOOSE: "go tool -modfile tools/goose.mod goose"
+  GOLANGCILINT: "go tool -modfile={{.ROOT_DIR}}/tools/golangci-lint.mod golangci-lint"
+  GOOSE: "go tool -modfile={{.ROOT_DIR}}/tools/goose.mod goose"
   DEV_COMPOSE: "-f deploy/docker-compose-dev.yml"
 
 tasks:
@@ -26,6 +26,16 @@ tasks:
   lint:fix:
     desc: Линтинг кода
     cmd: "{{.GOLANGCILINT}} run --fix ./..."
+    silent: true
+
+  test:unit:
+    desc: Запуск тестов
+    cmd: go test ./...
+    silent: true
+
+  check:
+    desc: Набор проверок перед коммитом
+    deps: [fmt:fix, lint:fix, test:unit]
     silent: true
 
   dev:start:

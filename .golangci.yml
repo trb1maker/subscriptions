@@ -56,38 +56,37 @@ linters:
         auth-domain:
           list-mode: strict
           files:
-            - "**/internal/auth/domain/**/*.go"
+            - "**/services/auth/internal/domain/**/*.go"
           allow:
             - $gostd
-            - github.com/trb1maker/subscriptions/internal/auth/domain
+            - github.com/trb1maker/subscriptions/services/auth/internal/domain
         subscriptions-domain:
           list-mode: strict
           files:
-            - "**/internal/subscriptions/domain/**/*.go"
+            - "**/services/subscriptions/internal/domain/**/*.go"
           allow:
             - $gostd
-            - github.com/trb1maker/subscriptions/internal/subscriptions/domain
+            - github.com/trb1maker/subscriptions/services/subscriptions/internal/domain
         usage-domain:
           list-mode: strict
           files:
-            - "**/internal/usage/domain/**/*.go"
+            - "**/services/usage/internal/domain/**/*.go"
           allow:
             - $gostd
-            - github.com/trb1maker/subscriptions/internal/usage/domain
+            - github.com/trb1maker/subscriptions/services/usage/internal/domain
         gateway-domain:
           list-mode: strict
           files:
-            - "**/internal/gateway/domain/**/*.go"
+            - "**/services/gateway/internal/domain/**/*.go"
           allow:
             - $gostd
-            - github.com/trb1maker/subscriptions/internal/gateway/domain
+            - github.com/trb1maker/subscriptions/services/gateway/internal/domain
         auth:
           list-mode: lax
           files:
-            - "**/internal/auth/**/*.go"
-            - "**/cmd/auth/**/*.go"
+            - "**/services/auth/**/*.go"
           allow:
-            - github.com/trb1maker/subscriptions/internal/auth
+            - github.com/trb1maker/subscriptions/services/auth
             - github.com/trb1maker/subscriptions/pkg
             - github.com/trb1maker/subscriptions/api
           deny:
@@ -96,10 +95,9 @@ linters:
         subscriptions:
           list-mode: lax
           files:
-            - "**/internal/subscriptions/**/*.go"
-            - "**/cmd/subscriptions/**/*.go"
+            - "**/services/subscriptions/**/*.go"
           allow:
-            - github.com/trb1maker/subscriptions/internal/subscriptions
+            - github.com/trb1maker/subscriptions/services/subscriptions
             - github.com/trb1maker/subscriptions/pkg
             - github.com/trb1maker/subscriptions/api
           deny:
@@ -108,10 +106,9 @@ linters:
         usage:
           list-mode: lax
           files:
-            - "**/internal/usage/**/*.go"
-            - "**/cmd/usage/**/*.go"
+            - "**/services/usage/**/*.go"
           allow:
-            - github.com/trb1maker/subscriptions/internal/usage
+            - github.com/trb1maker/subscriptions/services/usage
             - github.com/trb1maker/subscriptions/pkg
             - github.com/trb1maker/subscriptions/api
           deny:
@@ -120,10 +117,9 @@ linters:
         gateway:
           list-mode: lax
           files:
-            - "**/internal/gateway/**/*.go"
-            - "**/cmd/gateway/**/*.go"
+            - "**/services/gateway/**/*.go"
           allow:
-            - github.com/trb1maker/subscriptions/internal/gateway
+            - github.com/trb1maker/subscriptions/services/gateway
             - github.com/trb1maker/subscriptions/pkg
             - github.com/trb1maker/subscriptions/api
           deny:
@@ -141,20 +137,20 @@ linters:
         app:
           list-mode: lax
           files:
-            - "**/internal/*/app/**/*.go"
+            - "**/services/*/internal/app/**/*.go"
           deny:
-            - pkg: github.com/trb1maker/subscriptions/internal/auth/adapters
+            - pkg: github.com/trb1maker/subscriptions/services/auth/internal/adapters
               desc: сценарий не зависит от адаптеров
-            - pkg: github.com/trb1maker/subscriptions/internal/subscriptions/adapters
+            - pkg: github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters
               desc: сценарий не зависит от адаптеров
-            - pkg: github.com/trb1maker/subscriptions/internal/usage/adapters
+            - pkg: github.com/trb1maker/subscriptions/services/usage/internal/adapters
               desc: сценарий не зависит от адаптеров
-            - pkg: github.com/trb1maker/subscriptions/internal/gateway/adapters
+            - pkg: github.com/trb1maker/subscriptions/services/gateway/internal/adapters
               desc: сценарий не зависит от адаптеров
         app-no-drivers:
           list-mode: lax
           files:
-            - "**/internal/*/app/**/*.go"
+            - "**/services/*/internal/app/**/*.go"
           deny:
             - pkg: github.com/jackc/pgx
               desc: драйвер доступен только адаптеру
@@ -202,8 +198,8 @@ linters:
       msg-style: lowercased
     wrapcheck:
       ignore-package-globs:
-        - github.com/trb1maker/subscriptions/internal/*/domain
-        - github.com/trb1maker/subscriptions/internal/*/domain/**
+        - github.com/trb1maker/subscriptions/services/*/internal/domain
+        - github.com/trb1maker/subscriptions/services/*/internal/domain/**
   exclusions:
     generated: lax
     paths:
