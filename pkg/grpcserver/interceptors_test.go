@@ -9,10 +9,46 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/trb1maker/subscriptions/pkg/caller"
 	"github.com/trb1maker/subscriptions/pkg/logger"
 )
+
+func TestNewTLSRequiresConfig(t *testing.T) {
+	t.Parallel()
+
+	log, err := logger.New(io.Discard, "error")
+	require.NoError(t, err)
+
+	_, err = NewTLS(log, nil)
+	require.Error(t, err)
+}
+
+func TestCallerInterceptor(t *testing.T) {
+	t.Parallel()
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		caller.MetadataSubject, "user-1",
+		caller.MetadataKind, "user",
+		caller.MetadataRole, "admin",
+		caller.MetadataRole, "user",
+		caller.MetadataRequestID, "req-1",
+	))
+
+	_, err := callerInterceptor()(ctx, nil, nil, func(ctx context.Context, _ any) (any, error) {
+		got, ok := caller.FromContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, "user-1", got.SubjectID)
+		require.Equal(t, "user", got.Kind)
+		require.Equal(t, []string{"admin", "user"}, got.Roles)
+		require.Equal(t, "req-1", logger.RequestID(ctx))
+
+		return "ok", nil
+	})
+	require.NoError(t, err)
+}
 
 func TestRecoverInterceptor(t *testing.T) {
 	t.Parallel()
