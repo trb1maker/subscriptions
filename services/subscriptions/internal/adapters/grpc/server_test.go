@@ -78,6 +78,14 @@ func TestCheckSubscription(t *testing.T) {
 	require.False(t, inactive.GetActive())
 }
 
+func TestProcessPaymentDoesNotRequireCaller(t *testing.T) {
+	t.Parallel()
+
+	srv := newServer(t, &memStore{}, time.Now())
+	_, err := srv.ProcessPayment(context.Background(), &subscriptionsv1.ProcessPaymentRequest{})
+	requireCode(t, err, codes.InvalidArgument)
+}
+
 func TestCreateTariffForbiddenAndMissingCaller(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +109,7 @@ func newServer(t *testing.T, store *memStore, now time.Time) *grpcapi.Server {
 
 	log, err := logger.New(io.Discard, "error")
 	require.NoError(t, err)
-	svc, err := app.New(store, directory{}, []byte("pepper"), func() time.Time { return now })
+	svc, err := app.New(store, directory{}, fakeBalances{}, fakePayments{}, []byte("pepper"), func() time.Time { return now })
 	require.NoError(t, err)
 
 	return grpcapi.NewServer(svc, log)
@@ -173,6 +181,26 @@ func (m *memStore) ActiveByOwner(_ context.Context, id uuid.UUID, kind domain.Ow
 
 func (m *memStore) ChangeSubscription(context.Context, uuid.UUID, domain.Tariff, string, []byte) (domain.Subscription, error) {
 	return domain.Subscription{}, domain.ErrNotFound
+}
+
+func (m *memStore) ReplayPayment(context.Context, string, []byte) (domain.Subscription, error) {
+	return domain.Subscription{}, domain.ErrNotFound
+}
+
+func (m *memStore) RenewSubscription(context.Context, uuid.UUID, int64, int64, string, time.Time, string, []byte) (domain.Subscription, error) {
+	return domain.Subscription{}, domain.ErrNotFound
+}
+
+type fakeBalances struct{}
+
+func (fakeBalances) Remaining(context.Context, domain.Owner) (int64, error) {
+	return 0, nil
+}
+
+type fakePayments struct{}
+
+func (fakePayments) PublishPaymentReceived(context.Context, app.PaymentNotice) error {
+	return nil
 }
 
 func (m *memStore) CloseExpired(context.Context, time.Time) (domain.ExpiryReport, error) {

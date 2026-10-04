@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // AllowanceMode — как из текущего остатка получить следующий.
 type AllowanceMode int
 
@@ -78,6 +80,37 @@ func PlanExpiry(sub Subscription, tariff Tariff, base *Tariff) (Subscription, bo
 	default:
 		return sub, false, ErrInvalidTariffType
 	}
+}
+
+// PlanPayment продлевает активную подписку текущим тарифом.
+// remaining — живой остаток. Неизрасходованное сгорает, овердрафт остаётся.
+// Пока период не кончился, сдвигается только его конец. Иначе новый период начинается с now.
+func PlanPayment(sub Subscription, tariff Tariff, remaining, amountMinor int64, now time.Time, paymentID string) (Subscription, error) {
+	if sub.Status != StatusActive {
+		return Subscription{}, ErrSubscriptionInactive
+	}
+
+	if paymentID == "" || now.IsZero() || amountMinor != tariff.MonthlyPriceMinor {
+		return Subscription{}, ErrInvalidArgument
+	}
+
+	allowance, err := NextAllowance(AllowanceRenewal, int64(tariff.MessageLimit), remaining)
+	if err != nil {
+		return Subscription{}, err
+	}
+
+	sub.MessageAllowance = allowance
+	sub.PaymentID = paymentID
+	if now.Before(sub.PeriodEnd) {
+		sub.PeriodEnd = NextPeriodEnd(sub.PeriodEnd)
+
+		return sub, nil
+	}
+
+	sub.PeriodStart = now
+	sub.PeriodEnd = NextPeriodEnd(now)
+
+	return sub, nil
 }
 
 func overdraft(current int64) int64 {

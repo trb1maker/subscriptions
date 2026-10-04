@@ -29,6 +29,7 @@ type Subscription struct {
 	MessageAllowance int64
 	PeriodStart      time.Time
 	PeriodEnd        time.Time
+	PaymentID        string
 }
 
 // OwnedBy сообщает, что подписка принадлежит вызывающему.
@@ -40,6 +41,18 @@ func (s Subscription) OwnedBy(owner Owner) bool {
 		return s.OrganizationID != nil && *s.OrganizationID == owner.ID
 	default:
 		return false
+	}
+}
+
+// Owner возвращает владельца подписки.
+func (s Subscription) Owner() (Owner, bool) {
+	switch {
+	case s.UserID != nil && s.OrganizationID == nil:
+		return Owner{ID: *s.UserID, Kind: OwnerUser}, true
+	case s.OrganizationID != nil && s.UserID == nil:
+		return Owner{ID: *s.OrganizationID, Kind: OwnerOrganization}, true
+	default:
+		return Owner{}, false
 	}
 }
 

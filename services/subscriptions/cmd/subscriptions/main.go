@@ -10,21 +10,26 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	natsio "github.com/nats-io/nats.go"
 	"github.com/robfig/cron/v3"
 	"google.golang.org/grpc"
 
 	authv1 "github.com/trb1maker/subscriptions/api/gen/auth/v1"
 	subscriptionsv1 "github.com/trb1maker/subscriptions/api/gen/subscriptions/v1"
+	usagev1 "github.com/trb1maker/subscriptions/api/gen/usage/v1"
 	"github.com/trb1maker/subscriptions/pkg/grpcclient"
 	"github.com/trb1maker/subscriptions/pkg/grpcserver"
 	"github.com/trb1maker/subscriptions/pkg/httpserver"
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/mtls"
+	natspkg "github.com/trb1maker/subscriptions/pkg/nats"
 	"github.com/trb1maker/subscriptions/pkg/postgres"
 	authadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/auth"
 	grpcapi "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/grpc"
 	httpapi "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/http"
+	natsadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/nats"
 	subscriptionspostgres "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/postgres"
+	usageadapter "github.com/trb1maker/subscriptions/services/subscriptions/internal/adapters/usage"
 	"github.com/trb1maker/subscriptions/services/subscriptions/internal/app"
 )
 
@@ -36,17 +41,20 @@ const (
 )
 
 type config struct {
-	HTTPAddr           string `env:"HTTP_ADDR"                  envDefault:":8082"`
-	GRPCAddr           string `env:"GRPC_ADDR"                  envDefault:":9092"`
-	LogLevel           string `env:"LOG_LEVEL"                  envDefault:"info"`
-	DatabaseURL        string `env:"SUBSCRIPTIONS_DATABASE_URL,required"`
-	AuthGRPCAddr       string `env:"AUTH_GRPC_ADDR,required"`
-	AuthGRPCServerName string `env:"AUTH_GRPC_SERVER_NAME"      envDefault:"localhost"`
-	RequestPepper      string `env:"SUBSCRIPTIONS_REQUEST_PEPPER,required"`
-	ExpireSchedule     string `env:"SUBSCRIPTIONS_EXPIRE_SCHEDULE" envDefault:"*/1 * * * *"`
-	TLSCertFile        string `env:"TLS_CERT_FILE,required"`
-	TLSKeyFile         string `env:"TLS_KEY_FILE,required"`
-	TLSCAFile          string `env:"TLS_CA_FILE,required"`
+	HTTPAddr            string `env:"HTTP_ADDR"                  envDefault:":8082"`
+	GRPCAddr            string `env:"GRPC_ADDR"                  envDefault:":9092"`
+	LogLevel            string `env:"LOG_LEVEL"                  envDefault:"info"`
+	DatabaseURL         string `env:"SUBSCRIPTIONS_DATABASE_URL,required"`
+	AuthGRPCAddr        string `env:"AUTH_GRPC_ADDR,required"`
+	AuthGRPCServerName  string `env:"AUTH_GRPC_SERVER_NAME"      envDefault:"localhost"`
+	UsageGRPCAddr       string `env:"USAGE_GRPC_ADDR,required"`
+	UsageGRPCServerName string `env:"USAGE_GRPC_SERVER_NAME"     envDefault:"localhost"`
+	NATSURL             string `env:"SUBSCRIPTIONS_NATS_URL,required"`
+	RequestPepper       string `env:"SUBSCRIPTIONS_REQUEST_PEPPER,required"`
+	ExpireSchedule      string `env:"SUBSCRIPTIONS_EXPIRE_SCHEDULE" envDefault:"*/1 * * * *"`
+	TLSCertFile         string `env:"TLS_CERT_FILE,required"`
+	TLSKeyFile          string `env:"TLS_KEY_FILE,required"`
+	TLSCAFile           string `env:"TLS_CA_FILE,required"`
 }
 
 func main() {
@@ -105,9 +113,34 @@ func run() int {
 	}
 	defer closeClient(ctx, log, authConn)
 
+	usageTLS, err := mtls.ClientConfig(tlsFiles, cfg.UsageGRPCServerName)
+	if err != nil {
+		log.ErrorContext(ctx, "tls init failed", "error", err)
+
+		return 1
+	}
+
+	usageConn, err := grpcclient.Dial(ctx, cfg.UsageGRPCAddr, usageTLS)
+	if err != nil {
+		log.ErrorContext(ctx, "usage client init failed", "error", err)
+
+		return 1
+	}
+	defer closeClient(ctx, log, usageConn)
+
+	natsConn, jetStream, err := natspkg.Connect(ctx, cfg.NATSURL)
+	if err != nil {
+		log.ErrorContext(ctx, "nats init failed", "error", err)
+
+		return 1
+	}
+	defer closeNATS(ctx, log, natsConn)
+
 	service, err := app.New(
 		subscriptionspostgres.NewRepository(pool),
 		authadapter.NewClient(authv1.NewAuthServiceClient(authConn), log),
+		usageadapter.NewClient(usagev1.NewUsageServiceClient(usageConn), log),
+		natsadapter.NewPublisher(jetStream, log),
 		[]byte(cfg.RequestPepper),
 		nil,
 	)
@@ -194,6 +227,12 @@ func serve(ctx context.Context, log *slog.Logger, httpServer *http.Server, grpcS
 	}
 
 	return first
+}
+
+func closeNATS(ctx context.Context, log *slog.Logger, conn *natsio.Conn) {
+	if err := conn.Drain(); err != nil {
+		log.ErrorContext(context.WithoutCancel(ctx), "nats close failed", "error", err)
+	}
 }
 
 func closeClient(ctx context.Context, log *slog.Logger, conn *grpc.ClientConn) {

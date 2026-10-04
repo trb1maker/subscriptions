@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"uuid"
 )
 
@@ -21,7 +22,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE organization_id = $1 AND status = 'active'
 `
@@ -35,6 +37,7 @@ type FindActiveSubscriptionByOrganizationRow struct {
 	MessageAllowance   int64
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
 }
 
 func (q *Queries) FindActiveSubscriptionByOrganization(ctx context.Context, organizationID *uuid.UUID) (FindActiveSubscriptionByOrganizationRow, error) {
@@ -49,6 +52,7 @@ func (q *Queries) FindActiveSubscriptionByOrganization(ctx context.Context, orga
 		&i.MessageAllowance,
 		&i.CurrentPeriodStart,
 		&i.CurrentPeriodEnd,
+		&i.PaymentID,
 	)
 	return i, err
 }
@@ -62,7 +66,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE user_id = $1 AND status = 'active'
 `
@@ -76,6 +81,7 @@ type FindActiveSubscriptionByUserRow struct {
 	MessageAllowance   int64
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
 }
 
 func (q *Queries) FindActiveSubscriptionByUser(ctx context.Context, userID *uuid.UUID) (FindActiveSubscriptionByUserRow, error) {
@@ -90,6 +96,7 @@ func (q *Queries) FindActiveSubscriptionByUser(ctx context.Context, userID *uuid
 		&i.MessageAllowance,
 		&i.CurrentPeriodStart,
 		&i.CurrentPeriodEnd,
+		&i.PaymentID,
 	)
 	return i, err
 }
@@ -183,7 +190,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE id = $1
 `
@@ -197,6 +205,7 @@ type FindSubscriptionRow struct {
 	MessageAllowance   int64
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
 }
 
 func (q *Queries) FindSubscription(ctx context.Context, id uuid.UUID) (FindSubscriptionRow, error) {
@@ -211,6 +220,7 @@ func (q *Queries) FindSubscription(ctx context.Context, id uuid.UUID) (FindSubsc
 		&i.MessageAllowance,
 		&i.CurrentPeriodStart,
 		&i.CurrentPeriodEnd,
+		&i.PaymentID,
 	)
 	return i, err
 }
@@ -382,6 +392,7 @@ SELECT
     subscriptions.message_allowance,
     subscriptions.current_period_start,
     subscriptions.current_period_end,
+    subscriptions.payment_id,
     tariffs.name,
     tariffs.monthly_price_minor,
     tariffs.message_limit,
@@ -404,6 +415,7 @@ type LockDueSubscriptionsRow struct {
 	MessageAllowance   int64
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
 	Name               string
 	MonthlyPriceMinor  int64
 	MessageLimit       int32
@@ -429,6 +441,7 @@ func (q *Queries) LockDueSubscriptions(ctx context.Context, currentPeriodEnd tim
 			&i.MessageAllowance,
 			&i.CurrentPeriodStart,
 			&i.CurrentPeriodEnd,
+			&i.PaymentID,
 			&i.Name,
 			&i.MonthlyPriceMinor,
 			&i.MessageLimit,
@@ -454,7 +467,8 @@ SELECT
     status,
     message_allowance,
     current_period_start,
-    current_period_end
+    current_period_end,
+    payment_id
 FROM subscriptions
 WHERE id = $1
 FOR UPDATE
@@ -469,6 +483,7 @@ type LockSubscriptionRow struct {
 	MessageAllowance   int64
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
 }
 
 func (q *Queries) LockSubscription(ctx context.Context, id uuid.UUID) (LockSubscriptionRow, error) {
@@ -483,8 +498,39 @@ func (q *Queries) LockSubscription(ctx context.Context, id uuid.UUID) (LockSubsc
 		&i.MessageAllowance,
 		&i.CurrentPeriodStart,
 		&i.CurrentPeriodEnd,
+		&i.PaymentID,
 	)
 	return i, err
+}
+
+const renewSubscription = `-- name: RenewSubscription :exec
+UPDATE subscriptions
+SET
+    message_allowance = $2,
+    current_period_start = $3,
+    current_period_end = $4,
+    payment_id = $5,
+    updated_at = now()
+WHERE id = $1
+`
+
+type RenewSubscriptionParams struct {
+	ID                 uuid.UUID
+	MessageAllowance   int64
+	CurrentPeriodStart time.Time
+	CurrentPeriodEnd   time.Time
+	PaymentID          pgtype.Text
+}
+
+func (q *Queries) RenewSubscription(ctx context.Context, arg RenewSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, renewSubscription,
+		arg.ID,
+		arg.MessageAllowance,
+		arg.CurrentPeriodStart,
+		arg.CurrentPeriodEnd,
+		arg.PaymentID,
+	)
+	return err
 }
 
 const updateSubscription = `-- name: UpdateSubscription :exec

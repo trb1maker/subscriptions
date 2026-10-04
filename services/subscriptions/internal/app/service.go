@@ -24,7 +24,29 @@ type Store interface {
 	Subscription(ctx context.Context, id uuid.UUID) (domain.Subscription, error)
 	ActiveByOwner(ctx context.Context, id uuid.UUID, kind domain.OwnerKind) (domain.Subscription, error)
 	ChangeSubscription(ctx context.Context, id uuid.UUID, tariff domain.Tariff, key string, requestHash []byte) (domain.Subscription, error)
+	ReplayPayment(ctx context.Context, key string, requestHash []byte) (domain.Subscription, error)
+	RenewSubscription(ctx context.Context, id uuid.UUID, remaining, amountMinor int64, paymentID string, now time.Time, key string, requestHash []byte) (domain.Subscription, error)
 	CloseExpired(ctx context.Context, now time.Time) (domain.ExpiryReport, error)
+}
+
+// Balances читает живой остаток владельца в Usage.
+type Balances interface {
+	Remaining(ctx context.Context, owner domain.Owner) (int64, error)
+}
+
+// PaymentNotice — уже посчитанный платёж для Usage.
+type PaymentNotice struct {
+	ID          uuid.UUID
+	OccurredAt  time.Time
+	Owner       domain.Owner
+	Allowance   int64
+	PaymentID   string
+	AmountMinor int64
+}
+
+// Payments публикует PaymentReceived. Повтор того же идентификатора не меняет остаток второй раз.
+type Payments interface {
+	PublishPaymentReceived(ctx context.Context, event PaymentNotice) error
 }
 
 // Directory проверяет в Auth, что владелец существует.
@@ -42,18 +64,28 @@ type CheckResult struct {
 type Service struct {
 	store     Store
 	directory Directory
+	balances  Balances
+	payments  Payments
 	pepper    []byte
 	now       func() time.Time
 }
 
 // New собирает сценарии. pepper — секрет HMAC для отпечатка запроса, now может быть nil.
-func New(store Store, directory Directory, pepper []byte, now func() time.Time) (*Service, error) {
+func New(store Store, directory Directory, balances Balances, payments Payments, pepper []byte, now func() time.Time) (*Service, error) {
 	if len(pepper) == 0 {
 		return nil, errors.New("empty request pepper")
 	}
 
 	if directory == nil {
 		return nil, errors.New("missing directory")
+	}
+
+	if balances == nil {
+		return nil, errors.New("missing balances")
+	}
+
+	if payments == nil {
+		return nil, errors.New("missing payments")
 	}
 
 	if now == nil {
@@ -63,6 +95,8 @@ func New(store Store, directory Directory, pepper []byte, now func() time.Time) 
 	return &Service{
 		store:     store,
 		directory: directory,
+		balances:  balances,
+		payments:  payments,
 		pepper:    append([]byte(nil), pepper...),
 		now:       now,
 	}, nil

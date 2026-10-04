@@ -150,13 +150,54 @@ func TestCloseExpiredSkipsPaidB2CWithoutBase(t *testing.T) {
 	require.Zero(t, report.Closed)
 }
 
+type fixtures struct {
+	svc      *app.Service
+	balances *fakeBalances
+	payments *fakePayments
+}
+
+func newFixtures(t *testing.T, store *memStore, directory app.Directory, now time.Time) fixtures {
+	t.Helper()
+
+	balances := &fakeBalances{}
+	payments := &fakePayments{}
+	svc, err := app.New(store, directory, balances, payments, []byte("pepper"), func() time.Time { return now })
+	require.NoError(t, err)
+
+	return fixtures{svc: svc, balances: balances, payments: payments}
+}
+
 func newService(t *testing.T, store *memStore, directory app.Directory, now time.Time) *app.Service {
 	t.Helper()
 
-	svc, err := app.New(store, directory, []byte("pepper"), func() time.Time { return now })
-	require.NoError(t, err)
+	return newFixtures(t, store, directory, now).svc
+}
 
-	return svc
+type fakeBalances struct {
+	remaining int64
+	err       error
+	calls     int
+}
+
+func (f *fakeBalances) Remaining(context.Context, domain.Owner) (int64, error) {
+	f.calls++
+
+	return f.remaining, f.err
+}
+
+type fakePayments struct {
+	events []app.PaymentNotice
+	err    error
+}
+
+func (f *fakePayments) PublishPaymentReceived(_ context.Context, event app.PaymentNotice) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.events = append(f.events, event)
+
+	return nil
 }
 
 type fakeDirectory struct {
@@ -397,6 +438,47 @@ func (m *memStore) ChangeSubscription(_ context.Context, id uuid.UUID, tariff do
 	m.keys[key] = storedCommand{hash: append([]byte(nil), requestHash...), resourceID: sub.ID}
 
 	return sub, nil
+}
+
+func (m *memStore) ReplayPayment(ctx context.Context, key string, requestHash []byte) (domain.Subscription, error) {
+	return m.ReplaySubscription(ctx, key, requestHash)
+}
+
+func (m *memStore) RenewSubscription(
+	_ context.Context,
+	id uuid.UUID,
+	remaining, amountMinor int64,
+	paymentID string,
+	now time.Time,
+	key string,
+	requestHash []byte,
+) (domain.Subscription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, err := m.replaySubscription(key, requestHash); err == nil || !isNotFound(err) {
+		return existing, err
+	}
+
+	sub, ok := m.subs[id]
+	if !ok {
+		return domain.Subscription{}, domain.ErrNotFound
+	}
+
+	tariff, ok := m.tariffs[sub.TariffID]
+	if !ok {
+		return domain.Subscription{}, domain.ErrNotFound
+	}
+
+	next, err := domain.PlanPayment(sub, tariff, remaining, amountMinor, now, paymentID)
+	if err != nil {
+		return domain.Subscription{}, err
+	}
+
+	m.subs[id] = next
+	m.keys[key] = storedCommand{hash: append([]byte(nil), requestHash...), resourceID: sub.ID}
+
+	return next, nil
 }
 
 func (m *memStore) CloseExpired(_ context.Context, now time.Time) (domain.ExpiryReport, error) {
