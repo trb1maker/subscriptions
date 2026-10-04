@@ -22,7 +22,10 @@ const (
 )
 
 // UsageEvent — одно событие учёта лимита.
+// Субъект JetStream: usage.owner.{owner_kind}.{owner_id}.
+// Заголовок Nats-Msg-Id равен event_id.
 // Повтор с тем же event_id не меняет остаток и не добавляет вторую запись.
+// Поток USAGE создаёт Usage при старте.
 type UsageEvent struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	EventId string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`

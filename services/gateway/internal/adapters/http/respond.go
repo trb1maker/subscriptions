@@ -13,13 +13,15 @@ import (
 const maxRequestBytes = 1 << 20
 
 const (
-	codeInvalidArgument = "invalid_argument"
-	codeUnauthenticated = "unauthenticated"
-	codeNotFound        = "not_found"
-	codeConflict        = "conflict"
-	codeUnavailable     = "unavailable"
-	codeInternal        = "internal"
-	codeForbidden       = "forbidden"
+	codeInvalidArgument      = "invalid_argument"
+	codeUnauthenticated      = "unauthenticated"
+	codeNotFound             = "not_found"
+	codeConflict             = "conflict"
+	codeUnavailable          = "unavailable"
+	codeInternal             = "internal"
+	codeForbidden            = "forbidden"
+	codeSubscriptionInactive = "subscription_inactive"
+	codeLimitExceeded        = "limit_exceeded"
 )
 
 type errorBody struct {
@@ -56,6 +58,10 @@ func (h handler) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code = http.StatusUnauthorized, codeUnauthenticated
 	case errors.Is(err, domain.ErrForbidden):
 		status, code = http.StatusForbidden, codeForbidden
+	case errors.Is(err, domain.ErrSubscriptionInactive):
+		status, code = http.StatusForbidden, codeSubscriptionInactive
+	case errors.Is(err, domain.ErrLimitExceeded):
+		status, code = http.StatusForbidden, codeLimitExceeded
 	case errors.Is(err, domain.ErrNotFound):
 		status, code = http.StatusNotFound, codeNotFound
 	case errors.Is(err, domain.ErrConflict):

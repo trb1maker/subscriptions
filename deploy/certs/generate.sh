@@ -63,4 +63,4 @@ rm -f auth.csr auth.ext subscriptions.csr subscriptions.ext usage.csr usage.ext 
 echo "Auth: TLS_CERT_FILE=$PWD/auth.crt TLS_KEY_FILE=$PWD/auth.key TLS_CA_FILE=$PWD/ca.crt"
 echo "Subscriptions: TLS_CERT_FILE=$PWD/subscriptions.crt TLS_KEY_FILE=$PWD/subscriptions.key TLS_CA_FILE=$PWD/ca.crt AUTH_GRPC_SERVER_NAME=localhost"
 echo "Usage: TLS_CERT_FILE=$PWD/usage.crt TLS_KEY_FILE=$PWD/usage.key TLS_CA_FILE=$PWD/ca.crt AUTH_GRPC_SERVER_NAME=localhost"
-echo "Gateway: TLS_CERT_FILE=$PWD/gateway.crt TLS_KEY_FILE=$PWD/gateway.key TLS_CA_FILE=$PWD/ca.crt AUTH_GRPC_SERVER_NAME=localhost SUBSCRIPTIONS_GRPC_SERVER_NAME=localhost"
+echo "Gateway: TLS_CERT_FILE=$PWD/gateway.crt TLS_KEY_FILE=$PWD/gateway.key TLS_CA_FILE=$PWD/ca.crt AUTH_GRPC_SERVER_NAME=localhost SUBSCRIPTIONS_GRPC_SERVER_NAME=localhost USAGE_GRPC_SERVER_NAME=localhost"
