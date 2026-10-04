@@ -74,22 +74,26 @@ func TestCheckLimitUsesOrganizationOfMember(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Allowed)
 	require.Equal(t, int64(5), result.Remaining)
+	require.Equal(t, org, result.Owner)
 
 	require.NoError(t, balances.Restore(context.Background(), org, 0, nil))
 	result, err = svc.CheckLimit(context.Background(), domain.Owner{ID: userID, Kind: domain.OwnerUser})
 	require.NoError(t, err)
 	require.False(t, result.Allowed)
 	require.Equal(t, int64(0), result.Remaining)
+	require.Equal(t, org, result.Owner)
 }
 
 func TestCheckLimitWithoutProjection(t *testing.T) {
 	t.Parallel()
 
 	svc := newService(t, newLedger(), newBalances(), directory{})
-	result, err := svc.CheckLimit(context.Background(), domain.Owner{ID: uuid.New(), Kind: domain.OwnerUser})
+	caller := domain.Owner{ID: uuid.New(), Kind: domain.OwnerUser}
+	result, err := svc.CheckLimit(context.Background(), caller)
 	require.NoError(t, err)
 	require.False(t, result.Allowed)
 	require.Equal(t, int64(0), result.Remaining)
+	require.Equal(t, domain.Owner{}, result.Owner)
 
 	_, err = svc.CheckLimit(context.Background(), domain.Owner{})
 	require.ErrorIs(t, err, domain.ErrUnauthenticated)

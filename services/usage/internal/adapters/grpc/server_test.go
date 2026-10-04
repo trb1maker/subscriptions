@@ -28,16 +28,21 @@ func TestCheckLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allowed.GetAllowed())
 	require.Equal(t, int64(2), allowed.GetRemaining())
+	require.Equal(t, string(owner.Kind), allowed.GetOwnerKind())
+	require.Equal(t, owner.ID.String(), allowed.GetOwnerId())
 
 	balances.values[owner] = -1
 	overdraft, err := srv.CheckLimit(ownerContext(owner), &usagev1.CheckLimitRequest{})
 	require.NoError(t, err)
 	require.False(t, overdraft.GetAllowed())
 	require.Equal(t, int64(-1), overdraft.GetRemaining())
+	require.Equal(t, owner.ID.String(), overdraft.GetOwnerId())
 
 	missing, err := srv.CheckLimit(ownerContext(domain.Owner{ID: uuid.New(), Kind: domain.OwnerUser}), &usagev1.CheckLimitRequest{})
 	require.NoError(t, err)
 	require.False(t, missing.GetAllowed())
+	require.Empty(t, missing.GetOwnerId())
+	require.Empty(t, missing.GetOwnerKind())
 
 	_, err = srv.CheckLimit(context.Background(), &usagev1.CheckLimitRequest{})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
