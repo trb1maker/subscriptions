@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/trb1maker/subscriptions/pkg/logger"
 	"github.com/trb1maker/subscriptions/pkg/middleware"
@@ -19,7 +22,7 @@ func TestRequestID(t *testing.T) {
 	t.Parallel()
 
 	var got string
-	router := newRouter(t, io.Discard, "info")
+	router := newRouter(t, io.Discard)
 	router.Get("/", func(_ http.ResponseWriter, r *http.Request) {
 		got = logger.RequestID(r.Context())
 	})
@@ -37,7 +40,7 @@ func TestRequestIDFromHeader(t *testing.T) {
 
 	const want = "req-from-caller"
 	var got string
-	router := newRouter(t, io.Discard, "info")
+	router := newRouter(t, io.Discard)
 	router.Get("/", func(_ http.ResponseWriter, r *http.Request) {
 		got = logger.RequestID(r.Context())
 	})
@@ -54,7 +57,7 @@ func TestRequestIDFromHeader(t *testing.T) {
 func TestRecover(t *testing.T) {
 	t.Parallel()
 
-	router := newRouter(t, io.Discard, "info")
+	router := newRouter(t, io.Discard)
 	router.Get("/", func(http.ResponseWriter, *http.Request) {
 		panic("boom")
 	})
@@ -72,7 +75,7 @@ func TestAccessLogKeepsRequestID(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	router := newRouter(t, &buf, "debug")
+	router := newRouter(t, &buf)
 	router.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -89,10 +92,44 @@ func TestAccessLogKeepsRequestID(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
 
-func newRouter(t *testing.T, w io.Writer, level string) chi.Router {
+func TestHTTPSpanUsesRoutePattern(t *testing.T) {
+	t.Parallel()
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	ctx, parent := provider.Tracer("test").Start(context.Background(), "parent")
+	t.Cleanup(func() { parent.End() })
+
+	log, err := logger.New(io.Discard, "error")
+	require.NoError(t, err)
+
+	router := chi.NewRouter()
+	middleware.Use(router, log, middleware.WithTracing())
+	router.Get("/v1/items/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	router.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/items/abc", nil).WithContext(ctx)
+	router.ServeHTTP(httptest.NewRecorder(), req)
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil).WithContext(ctx))
+
+	var names []string
+	for _, span := range recorder.Ended() {
+		names = append(names, span.Name())
+	}
+
+	require.Contains(t, names, "GET /v1/items/{id}")
+	require.NotContains(t, names, "GET /v1/items/abc")
+	require.NotContains(t, names, "GET /health")
+}
+
+func newRouter(t *testing.T, w io.Writer) chi.Router {
 	t.Helper()
 
-	log, err := logger.New(w, level)
+	log, err := logger.New(w, "info")
 	require.NoError(t, err)
 
 	router := chi.NewRouter()
