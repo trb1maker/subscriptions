@@ -7,3 +7,5 @@ deploy/certs/*.csr
 deploy/certs/*.srl
 deploy/certs/*.pem
 deploy/certs/*.ext
+deploy/logs/*.jsonl
+deploy/observability/vector-data/

@@ -71,3 +71,23 @@ tasks:
     dotenv: [.env]
     cmd: docker compose {{.DEV_COMPOSE}} down -v
     silent: true
+
+  run:gateway:
+    desc: Gateway, stdout дополнительно в deploy/logs/gateway.jsonl
+    dotenv: [.env]
+    cmd: mkdir -p deploy/logs && go run ./services/gateway/cmd/gateway 2>&1 | tee -a deploy/logs/gateway.jsonl
+
+  run:auth:
+    desc: Auth, stdout дополнительно в deploy/logs/auth.jsonl
+    dotenv: [.env]
+    cmd: mkdir -p deploy/logs && go run ./services/auth/cmd/auth 2>&1 | tee -a deploy/logs/auth.jsonl
+
+  run:subscriptions:
+    desc: Subscriptions, stdout дополнительно в deploy/logs/subscriptions.jsonl
+    dotenv: [.env]
+    cmd: mkdir -p deploy/logs && go run ./services/subscriptions/cmd/subscriptions 2>&1 | tee -a deploy/logs/subscriptions.jsonl
+
+  run:usage:
+    desc: Usage, stdout дополнительно в deploy/logs/usage.jsonl
+    dotenv: [.env]
+    cmd: mkdir -p deploy/logs && go run ./services/usage/cmd/usage 2>&1 | tee -a deploy/logs/usage.jsonl
