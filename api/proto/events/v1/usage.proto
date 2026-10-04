@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package events.v1;
+
+option go_package = "github.com/trb1maker/subscriptions/api/gen/events/v1;eventsv1";
+
+// UsageEvent — одно событие учёта лимита.
+// Повтор с тем же event_id не меняет остаток и не добавляет вторую запись.
+message UsageEvent {
+  string event_id = 1;
+  // Момент в RFC3339.
+  string occurred_at = 2;
+  // user или organization.
+  string owner_kind = 3;
+  string owner_id = 4;
+
+  oneof kind {
+    MessageProcessed message_processed = 5;
+    MessageFailed message_failed = 6;
+    PaymentReceived payment_received = 7;
+    SubscriptionChanged subscription_changed = 8;
+    SubscriptionPeriodEnded subscription_period_ended = 9;
+  }
+}
+
+// MessageProcessed — успешная генерация. Списывает одно сообщение.
+message MessageProcessed {
+  int64 tokens = 1;
+}
+
+// MessageFailed — ошибка генерации. Остаток не меняет.
+message MessageFailed {
+  int64 tokens = 1;
+}
+
+// PaymentReceived ставит уже посчитанный остаток и фиксирует платёж.
+message PaymentReceived {
+  int64 allowance = 1;
+  string payment_id = 2;
+  int64 amount_minor = 3;
+}
+
+// SubscriptionChanged ставит остаток после смены тарифа.
+message SubscriptionChanged {
+  int64 allowance = 1;
+}
+
+// SubscriptionPeriodEnded ставит остаток после окончания периода.
+message SubscriptionPeriodEnded {
+  int64 allowance = 1;
+}

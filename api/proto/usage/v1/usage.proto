@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package usage.v1;
+
+option go_package = "github.com/trb1maker/subscriptions/api/gen/usage/v1;usagev1";
+
+// UsageService хранит остаток сообщений и отвечает, можно ли начать генерацию.
+service UsageService {
+  // CheckLimit разрешает генерацию, пока остаток больше нуля.
+  // Отсутствие проекции — успешный ответ с allowed = false.
+  rpc CheckLimit(CheckLimitRequest) returns (CheckLimitResponse);
+}
+
+message CheckLimitRequest {}
+
+message CheckLimitResponse {
+  bool allowed = 1;
+  int64 remaining = 2;
+}
