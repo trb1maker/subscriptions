@@ -513,6 +513,75 @@ func (x *Subscription) GetCurrentPeriodEnd() string {
 	return ""
 }
 
+type ProcessPaymentRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId      string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	SubscriptionId string                 `protobuf:"bytes,2,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	AmountMinor    int64                  `protobuf:"varint,3,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	// Момент платежа в RFC3339.
+	OccurredAt    string `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessPaymentRequest) Reset() {
+	*x = ProcessPaymentRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessPaymentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessPaymentRequest) ProtoMessage() {}
+
+func (x *ProcessPaymentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessPaymentRequest.ProtoReflect.Descriptor instead.
+func (*ProcessPaymentRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ProcessPaymentRequest) GetPaymentId() string {
+	if x != nil {
+		return x.PaymentId
+	}
+	return ""
+}
+
+func (x *ProcessPaymentRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *ProcessPaymentRequest) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+func (x *ProcessPaymentRequest) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
 type CheckSubscriptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -521,7 +590,7 @@ type CheckSubscriptionRequest struct {
 
 func (x *CheckSubscriptionRequest) Reset() {
 	*x = CheckSubscriptionRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +602,7 @@ func (x *CheckSubscriptionRequest) String() string {
 func (*CheckSubscriptionRequest) ProtoMessage() {}
 
 func (x *CheckSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +615,7 @@ func (x *CheckSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*CheckSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{8}
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{9}
 }
 
 type CheckSubscriptionResponse struct {
@@ -562,7 +631,7 @@ type CheckSubscriptionResponse struct {
 
 func (x *CheckSubscriptionResponse) Reset() {
 	*x = CheckSubscriptionResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -574,7 +643,7 @@ func (x *CheckSubscriptionResponse) String() string {
 func (*CheckSubscriptionResponse) ProtoMessage() {}
 
 func (x *CheckSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -587,7 +656,7 @@ func (x *CheckSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*CheckSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{9}
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CheckSubscriptionResponse) GetActive() bool {
@@ -662,21 +731,29 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12+\n" +
 	"\x11message_allowance\x18\x04 \x01(\x03R\x10messageAllowance\x120\n" +
 	"\x14current_period_start\x18\x05 \x01(\tR\x12currentPeriodStart\x12,\n" +
-	"\x12current_period_end\x18\x06 \x01(\tR\x10currentPeriodEnd\"\x1a\n" +
+	"\x12current_period_end\x18\x06 \x01(\tR\x10currentPeriodEnd\"\xa3\x01\n" +
+	"\x15ProcessPaymentRequest\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12'\n" +
+	"\x0fsubscription_id\x18\x02 \x01(\tR\x0esubscriptionId\x12!\n" +
+	"\famount_minor\x18\x03 \x01(\x03R\vamountMinor\x12\x1f\n" +
+	"\voccurred_at\x18\x04 \x01(\tR\n" +
+	"occurredAt\"\x1a\n" +
 	"\x18CheckSubscriptionRequest\"\xcc\x01\n" +
 	"\x19CheckSubscriptionResponse\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12'\n" +
 	"\x0fsubscription_id\x18\x02 \x01(\tR\x0esubscriptionId\x12\x1b\n" +
 	"\ttariff_id\x18\x03 \x01(\tR\btariffId\x12#\n" +
 	"\rmessage_limit\x18\x04 \x01(\x03R\fmessageLimit\x12,\n" +
-	"\x12current_period_end\x18\x05 \x01(\tR\x10currentPeriodEnd2\xd3\x04\n" +
+	"\x12current_period_end\x18\x05 \x01(\tR\x10currentPeriodEnd2\xae\x05\n" +
 	"\x13SubscriptionService\x12O\n" +
 	"\fCreateTariff\x12%.subscriptions.v1.CreateTariffRequest\x1a\x18.subscriptions.v1.Tariff\x12Z\n" +
 	"\vListTariffs\x12$.subscriptions.v1.ListTariffsRequest\x1a%.subscriptions.v1.ListTariffsResponse\x12a\n" +
 	"\x12CreateSubscription\x12+.subscriptions.v1.CreateSubscriptionRequest\x1a\x1e.subscriptions.v1.Subscription\x12a\n" +
 	"\x12ChangeSubscription\x12+.subscriptions.v1.ChangeSubscriptionRequest\x1a\x1e.subscriptions.v1.Subscription\x12[\n" +
 	"\x0fGetSubscription\x12(.subscriptions.v1.GetSubscriptionRequest\x1a\x1e.subscriptions.v1.Subscription\x12l\n" +
-	"\x11CheckSubscription\x12*.subscriptions.v1.CheckSubscriptionRequest\x1a+.subscriptions.v1.CheckSubscriptionResponseBMZKgithub.com/trb1maker/subscriptions/api/gen/subscriptions/v1;subscriptionsv1b\x06proto3"
+	"\x11CheckSubscription\x12*.subscriptions.v1.CheckSubscriptionRequest\x1a+.subscriptions.v1.CheckSubscriptionResponse\x12Y\n" +
+	"\x0eProcessPayment\x12'.subscriptions.v1.ProcessPaymentRequest\x1a\x1e.subscriptions.v1.SubscriptionBMZKgithub.com/trb1maker/subscriptions/api/gen/subscriptions/v1;subscriptionsv1b\x06proto3"
 
 var (
 	file_subscriptions_v1_subscriptions_proto_rawDescOnce sync.Once
@@ -690,7 +767,7 @@ func file_subscriptions_v1_subscriptions_proto_rawDescGZIP() []byte {
 	return file_subscriptions_v1_subscriptions_proto_rawDescData
 }
 
-var file_subscriptions_v1_subscriptions_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_subscriptions_v1_subscriptions_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_subscriptions_v1_subscriptions_proto_goTypes = []any{
 	(*CreateTariffRequest)(nil),       // 0: subscriptions.v1.CreateTariffRequest
 	(*Tariff)(nil),                    // 1: subscriptions.v1.Tariff
@@ -700,28 +777,31 @@ var file_subscriptions_v1_subscriptions_proto_goTypes = []any{
 	(*ChangeSubscriptionRequest)(nil), // 5: subscriptions.v1.ChangeSubscriptionRequest
 	(*GetSubscriptionRequest)(nil),    // 6: subscriptions.v1.GetSubscriptionRequest
 	(*Subscription)(nil),              // 7: subscriptions.v1.Subscription
-	(*CheckSubscriptionRequest)(nil),  // 8: subscriptions.v1.CheckSubscriptionRequest
-	(*CheckSubscriptionResponse)(nil), // 9: subscriptions.v1.CheckSubscriptionResponse
+	(*ProcessPaymentRequest)(nil),     // 8: subscriptions.v1.ProcessPaymentRequest
+	(*CheckSubscriptionRequest)(nil),  // 9: subscriptions.v1.CheckSubscriptionRequest
+	(*CheckSubscriptionResponse)(nil), // 10: subscriptions.v1.CheckSubscriptionResponse
 }
 var file_subscriptions_v1_subscriptions_proto_depIdxs = []int32{
-	1, // 0: subscriptions.v1.ListTariffsResponse.tariffs:type_name -> subscriptions.v1.Tariff
-	0, // 1: subscriptions.v1.SubscriptionService.CreateTariff:input_type -> subscriptions.v1.CreateTariffRequest
-	2, // 2: subscriptions.v1.SubscriptionService.ListTariffs:input_type -> subscriptions.v1.ListTariffsRequest
-	4, // 3: subscriptions.v1.SubscriptionService.CreateSubscription:input_type -> subscriptions.v1.CreateSubscriptionRequest
-	5, // 4: subscriptions.v1.SubscriptionService.ChangeSubscription:input_type -> subscriptions.v1.ChangeSubscriptionRequest
-	6, // 5: subscriptions.v1.SubscriptionService.GetSubscription:input_type -> subscriptions.v1.GetSubscriptionRequest
-	8, // 6: subscriptions.v1.SubscriptionService.CheckSubscription:input_type -> subscriptions.v1.CheckSubscriptionRequest
-	1, // 7: subscriptions.v1.SubscriptionService.CreateTariff:output_type -> subscriptions.v1.Tariff
-	3, // 8: subscriptions.v1.SubscriptionService.ListTariffs:output_type -> subscriptions.v1.ListTariffsResponse
-	7, // 9: subscriptions.v1.SubscriptionService.CreateSubscription:output_type -> subscriptions.v1.Subscription
-	7, // 10: subscriptions.v1.SubscriptionService.ChangeSubscription:output_type -> subscriptions.v1.Subscription
-	7, // 11: subscriptions.v1.SubscriptionService.GetSubscription:output_type -> subscriptions.v1.Subscription
-	9, // 12: subscriptions.v1.SubscriptionService.CheckSubscription:output_type -> subscriptions.v1.CheckSubscriptionResponse
-	7, // [7:13] is the sub-list for method output_type
-	1, // [1:7] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1,  // 0: subscriptions.v1.ListTariffsResponse.tariffs:type_name -> subscriptions.v1.Tariff
+	0,  // 1: subscriptions.v1.SubscriptionService.CreateTariff:input_type -> subscriptions.v1.CreateTariffRequest
+	2,  // 2: subscriptions.v1.SubscriptionService.ListTariffs:input_type -> subscriptions.v1.ListTariffsRequest
+	4,  // 3: subscriptions.v1.SubscriptionService.CreateSubscription:input_type -> subscriptions.v1.CreateSubscriptionRequest
+	5,  // 4: subscriptions.v1.SubscriptionService.ChangeSubscription:input_type -> subscriptions.v1.ChangeSubscriptionRequest
+	6,  // 5: subscriptions.v1.SubscriptionService.GetSubscription:input_type -> subscriptions.v1.GetSubscriptionRequest
+	9,  // 6: subscriptions.v1.SubscriptionService.CheckSubscription:input_type -> subscriptions.v1.CheckSubscriptionRequest
+	8,  // 7: subscriptions.v1.SubscriptionService.ProcessPayment:input_type -> subscriptions.v1.ProcessPaymentRequest
+	1,  // 8: subscriptions.v1.SubscriptionService.CreateTariff:output_type -> subscriptions.v1.Tariff
+	3,  // 9: subscriptions.v1.SubscriptionService.ListTariffs:output_type -> subscriptions.v1.ListTariffsResponse
+	7,  // 10: subscriptions.v1.SubscriptionService.CreateSubscription:output_type -> subscriptions.v1.Subscription
+	7,  // 11: subscriptions.v1.SubscriptionService.ChangeSubscription:output_type -> subscriptions.v1.Subscription
+	7,  // 12: subscriptions.v1.SubscriptionService.GetSubscription:output_type -> subscriptions.v1.Subscription
+	10, // 13: subscriptions.v1.SubscriptionService.CheckSubscription:output_type -> subscriptions.v1.CheckSubscriptionResponse
+	7,  // 14: subscriptions.v1.SubscriptionService.ProcessPayment:output_type -> subscriptions.v1.Subscription
+	8,  // [8:15] is the sub-list for method output_type
+	1,  // [1:8] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_subscriptions_v1_subscriptions_proto_init() }
@@ -735,7 +815,7 @@ func file_subscriptions_v1_subscriptions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_subscriptions_v1_subscriptions_proto_rawDesc), len(file_subscriptions_v1_subscriptions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

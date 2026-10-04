@@ -18,6 +18,10 @@ service SubscriptionService {
   rpc GetSubscription(GetSubscriptionRequest) returns (Subscription);
   // CheckSubscription сообщает, действует ли подписка вызывающего. Отсутствие подписки — успешный ответ с active = false.
   rpc CheckSubscription(CheckSubscriptionRequest) returns (CheckSubscriptionResponse);
+  // ProcessPayment продлевает активную подписку по успешному платежу и публикует PaymentReceived.
+  // payment_id — ключ идемпотентности и идентификатор события. Повтор того же тела не продлевает период второй раз.
+  // Вызывающий из metadata не нужен: доступ ограничен mTLS, подписка указана в теле.
+  rpc ProcessPayment(ProcessPaymentRequest) returns (Subscription);
 }
 
 message CreateTariffRequest {
@@ -70,6 +74,14 @@ message Subscription {
   // Момент в RFC3339.
   string current_period_start = 5;
   string current_period_end = 6;
+}
+
+message ProcessPaymentRequest {
+  string payment_id = 1;
+  string subscription_id = 2;
+  int64 amount_minor = 3;
+  // Момент платежа в RFC3339.
+  string occurred_at = 4;
 }
 
 message CheckSubscriptionRequest {}

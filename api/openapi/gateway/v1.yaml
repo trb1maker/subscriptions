@@ -285,13 +285,25 @@ paths:
       summary: Приём вебхука платежа
       parameters:
         - $ref: "#/components/parameters/WebhookKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentWebhook"
       responses:
         "202":
-          description: Ключ принят, тело не обрабатывается
+          description: Платёж принят
         "400":
           $ref: "#/components/responses/InvalidArgument"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
 components:
   securitySchemes:
     bearerAuth:
@@ -549,6 +561,27 @@ components:
         tariff_id:
           type: string
           format: uuid
+    PaymentWebhook:
+      type: object
+      additionalProperties: false
+      required:
+        - payment_id
+        - subscription_id
+        - amount_minor
+        - occurred_at
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+        subscription_id:
+          type: string
+          format: uuid
+        amount_minor:
+          type: integer
+          minimum: 0
+        occurred_at:
+          type: string
+          format: date-time
     GenerateRequest:
       type: object
       additionalProperties: false
